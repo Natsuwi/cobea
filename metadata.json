@@ -1,0 +1,6 @@
+{
+  "name": "Masonry Gallery",
+  "description": "Minimalist Zen image gallery with masonry grid layout, drag-and-drop uploads, dark mode, and bottom floating toolbar.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

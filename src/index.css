@@ -1,0 +1,611 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --bg-main: #f5f5f3;
+    --text-main: #111113;
+    --text-muted: #6e6e73;
+    --card-bg: #ffffff;
+    --card-border: rgba(0, 0, 0, 0.06);
+    --navbar-bg: rgba(255, 255, 255, 0.85);
+    --navbar-border: rgba(0, 0, 0, 0.08);
+  }
+
+  .dark {
+    --bg-main: #0b0c0e;
+    --text-main: #f5f5f7;
+    --text-muted: #8e8e93;
+    --card-bg: #141518;
+    --card-border: rgba(255, 255, 255, 0.08);
+    --navbar-bg: rgba(20, 21, 24, 0.85);
+    --navbar-border: rgba(255, 255, 255, 0.12);
+  }
+
+  body {
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Plus Jakarta Sans', Roboto, sans-serif;
+    transition: background-color 0.3s ease, color 0.3s ease;
+    overflow-x: hidden;
+    margin: 0;
+    padding: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Custom smooth scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(140, 140, 140, 0.2);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(140, 140, 140, 0.35);
+}
+
+/* Glassmorphism support */
+.glass-panel {
+  background-color: var(--navbar-bg);
+  backdrop-filter: blur(20px) saturate(190%);
+  -webkit-backdrop-filter: blur(20px) saturate(190%);
+  border: 1px solid var(--navbar-border);
+}
+
+.glass-card {
+  background-color: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.dark .glass-card {
+  background-color: rgba(20, 21, 24, 0.6);
+}
+
+/* Hide scrollbar for clean UI where needed */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Live markdown preview (MyMind-style) */
+.markdown-preview {
+  font-size: 0.875rem;
+  line-height: 1.65;
+  color: var(--text-main);
+  word-break: break-word;
+}
+
+.markdown-preview--compact {
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+.markdown-preview > *:first-child {
+  margin-top: 0;
+}
+
+.markdown-preview > *:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-preview h1 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0.75em 0 0.35em;
+}
+
+.markdown-preview h2 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin: 0.7em 0 0.3em;
+}
+
+.markdown-preview h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0.6em 0 0.25em;
+}
+
+.markdown-preview p {
+  margin: 0.4em 0;
+}
+
+.markdown-preview blockquote {
+  margin: 0.6em 0;
+  padding: 0.35em 0 0.35em 0.9em;
+  border-left: 3px solid rgba(180, 140, 60, 0.45);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.markdown-preview ul,
+.markdown-preview ol {
+  margin: 0.4em 0;
+  padding-left: 1.25em;
+}
+
+.markdown-preview li {
+  margin: 0.15em 0;
+}
+
+.markdown-preview li + li {
+  margin-top: 0.2em;
+}
+
+.markdown-preview code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85em;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.1em 0.35em;
+  border-radius: 0.35rem;
+}
+
+.dark .markdown-preview code {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.markdown-preview pre {
+  margin: 0.6em 0;
+  padding: 0.75em 1em;
+  border-radius: 0.75rem;
+  background: rgba(0, 0, 0, 0.05);
+  overflow-x: auto;
+}
+
+.dark .markdown-preview pre {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.markdown-preview pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.8em;
+}
+
+.markdown-preview a {
+  color: #b45309;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.dark .markdown-preview a {
+  color: #fbbf24;
+}
+
+.markdown-preview hr {
+  border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  margin: 1em 0;
+}
+
+.dark .markdown-preview hr {
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+.markdown-preview strong {
+  font-weight: 600;
+}
+
+.markdown-preview del {
+  opacity: 0.7;
+}
+
+/* Unified WYSIWYG note editor (TipTap) */
+.note-editor-shell .tiptap,
+.note-editor-shell .ProseMirror {
+  outline: none;
+  min-height: inherit;
+}
+
+.note-editor-shell--fullscreen .tiptap,
+.note-editor-shell--fullscreen .ProseMirror {
+  min-height: 50vh;
+  font-size: 1.05rem;
+  line-height: 1.75;
+}
+
+.note-editor-shell--embedded {
+  background: transparent;
+  border: none;
+  outline: none;
+  box-shadow: none;
+}
+
+.note-editor-shell--embedded .tiptap,
+.note-editor-shell--embedded .ProseMirror {
+  min-height: 100%;
+  outline: none;
+}
+
+.note-editor-shell .ProseMirror p.is-editor-empty:first-child::before,
+.note-editor-shell .ProseMirror .is-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: #a1a1aa;
+}
+
+.dark .note-editor-shell .ProseMirror p.is-editor-empty:first-child::before,
+.dark .note-editor-shell .ProseMirror .is-empty::before {
+  color: #71717a;
+}
+
+.note-editor-content {
+  font-size: 0.875rem;
+  line-height: 1.65;
+}
+
+.note-editor-content > *:first-child {
+  margin-top: 0;
+}
+
+.note-editor-content > *:last-child {
+  margin-bottom: 0;
+}
+
+/* Drawing toolbox — tools peek from below; tip always framed (brush is ~9:1 tall) */
+.drawing-tool-tray {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 1.25rem;
+  height: 4.5rem;
+  padding: 0 0.75rem;
+  /* Allow selected tools to rise above the tray without clipping */
+  overflow: visible;
+}
+
+.drawing-tool-slot {
+  position: relative;
+  flex-shrink: 0;
+  width: 3.75rem;
+  height: 4.5rem;
+  overflow: visible;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.drawing-tool-slot img {
+  width: 3.25rem;
+  /* Fixed window into the asset so we always frame the tip, not mid-handle */
+  height: 6.75rem;
+  max-width: none;
+  object-fit: cover;
+  object-position: top center;
+  transform: translateY(52%);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+  user-select: none;
+}
+
+.drawing-tool-slot--brush img {
+  width: 2.55rem;
+  height: 5.5rem;
+  transform: translateY(48%);
+}
+
+.drawing-tool-slot--brush.drawing-tool-slot--active img {
+  transform: translateY(4%);
+}
+
+.drawing-tool-slot--active img {
+  transform: translateY(4%);
+  filter: drop-shadow(0 -6px 14px rgba(0, 0, 0, 0.18));
+}
+
+.drawing-tool-slot--cursor {
+  width: 4.5rem;
+}
+
+.drawing-tool-slot--cursor img {
+  width: 4rem;
+  height: 4.25rem;
+  object-fit: contain;
+  object-position: center;
+  transform: translateY(28%);
+}
+
+.drawing-tool-slot--cursor.drawing-tool-slot--active img {
+  transform: translateY(0%);
+}
+
+/* iro.js color picker */
+.iro-color-picker-panel .IroColorPicker {
+  display: block;
+}
+
+.iro-color-picker-panel .IroWheel,
+.iro-color-picker-panel .IroSlider {
+  margin: 0 auto;
+}
+
+.iro-color-picker-panel .IroSlider {
+  margin-top: 10px;
+}
+
+.dark .iro-color-picker-panel .IroWheelBorder {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+/* Vertical brush-size gauge */
+.brush-size-gauge {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 120px;
+  height: 6px;
+  margin: 0;
+  border-radius: 999px;
+  background: linear-gradient(to right, #a1a1aa, #27272a);
+  transform: rotate(-90deg);
+  transform-origin: center center;
+  cursor: pointer;
+}
+
+.dark .brush-size-gauge {
+  background: linear-gradient(to right, #52525b, #fafafa);
+}
+
+.brush-size-gauge::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #27272a;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  cursor: grab;
+}
+
+.dark .brush-size-gauge::-webkit-slider-thumb {
+  background: #18181b;
+  border-color: #fafafa;
+}
+
+.brush-size-gauge::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #27272a;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  cursor: grab;
+}
+
+.dark .brush-size-gauge::-moz-range-thumb {
+  background: #18181b;
+  border-color: #fafafa;
+}
+
+.brush-size-gauge::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+/* Selection dock — mostly below viewport, top slice visible */
+.selection-dock-clip {
+  --dock-visible: 64px;
+  --dock-lift: 96px;
+  --dock-raised: calc(var(--dock-visible) + var(--dock-lift));
+  height: var(--dock-visible);
+  transition: height 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.selection-dock-clip--raised {
+  height: var(--dock-raised);
+}
+
+.selection-dock-curtain {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: -50vh;
+  background: var(--bg-main);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.selection-dock-inner {
+  height: var(--dock-raised);
+  bottom: calc(var(--dock-visible) - var(--dock-raised));
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  transition: bottom 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.selection-dock-clip--raised .selection-dock-inner {
+  bottom: 0;
+}
+
+.selection-dock-dropzone {
+  border-color: rgba(161, 161, 170, 0.55);
+}
+
+.dark .selection-dock-dropzone {
+  border-color: rgba(113, 113, 122, 0.65);
+}
+
+.selection-dock-glass {
+  -webkit-backdrop-filter: blur(28px) saturate(1.6);
+  backdrop-filter: blur(28px) saturate(1.6);
+  background: rgba(255, 255, 255, 0.72);
+  pointer-events: none;
+}
+
+.dark .selection-dock-glass {
+  background: rgba(24, 24, 27, 0.78);
+}
+
+.selection-dock-dropzone--active .selection-dock-glass {
+  background: rgba(255, 251, 235, 0.42);
+}
+
+.dark .selection-dock-dropzone--active .selection-dock-glass {
+  background: rgba(69, 45, 10, 0.38);
+}
+
+.selection-dock-dropzone--active {
+  border-color: rgba(245, 158, 11, 0.55);
+}
+
+.dark .selection-dock-dropzone--active {
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+.selection-dock-dropzone--over .selection-dock-glass {
+  background: rgba(255, 247, 237, 0.5);
+}
+
+.dark .selection-dock-dropzone--over .selection-dock-glass {
+  background: rgba(92, 58, 14, 0.45);
+}
+
+.selection-dock-dropzone--over {
+  border-color: rgba(245, 158, 11, 0.85);
+}
+
+.dark .selection-dock-dropzone--over {
+  border-color: rgba(251, 191, 36, 0.75);
+}
+
+.selection-deck-card {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Moodboard card selection handles */
+.account-switcher-base {
+  background: var(--bg-main);
+}
+
+.account-switcher-bg-strip {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 15vh;
+  overflow: hidden;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.account-switcher-bg-image {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  /* Strip = 15vh = 15% of image → full image height = 100vh */
+  height: 100vh;
+  object-fit: cover;
+  object-position: center top;
+  user-select: none;
+}
+
+.account-switcher-bg-fade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    var(--bg-main) 0%,
+    color-mix(in srgb, var(--bg-main) 55%, transparent) 50%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+.moodboard-canvas-bg {
+  background-color: #0a0a0b;
+  background-image: radial-gradient(
+    rgba(255, 255, 255, 0.14) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+  background-position: 0 0;
+}
+
+.moodboard-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: white;
+  border: 2px solid #f59e0b;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  z-index: 10;
+  padding: 0;
+  transform: translate(-50%, -50%);
+}
+
+.moodboard-handle--nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.moodboard-handle--ne {
+  top: 0;
+  left: 100%;
+  cursor: nesw-resize;
+}
+
+.moodboard-handle--sw {
+  top: 100%;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.moodboard-handle--se {
+  top: 100%;
+  left: 100%;
+  cursor: nwse-resize;
+}
+
+.moodboard-rotate-stem {
+  position: absolute;
+  left: 50%;
+  top: -28px;
+  width: 2px;
+  height: 20px;
+  background: #f59e0b;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.moodboard-handle--rotate {
+  top: -36px;
+  left: 50%;
+  cursor: grab;
+  background: #f59e0b;
+  border-color: white;
+}
+
+.moodboard-handle--rotate:active {
+  cursor: grabbing;
+}
