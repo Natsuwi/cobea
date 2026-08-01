@@ -1,7 +1,15 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { ImageItem, ThemeMode, Folder, MoodboardPlacement, isNoteItem, isImageItem, isMoodboardItem } from './types';
-import { INITIAL_IMAGES } from './data/initialImages';
+import {
+  ImageItem,
+  ThemeMode,
+  Folder,
+  MoodboardPlacement,
+  UserProfile,
+  isNoteItem,
+  isImageItem,
+  isMoodboardItem,
+} from './types';
 import { MasonryGrid } from './components/MasonryGrid';
 import { BottomNavbar } from './components/BottomNavbar';
 import { DropOverlay } from './components/DropOverlay';
@@ -12,49 +20,31 @@ import { MoodboardModal } from './components/MoodboardModal';
 import { AddImageModal } from './components/AddImageModal';
 import { ZenHeader } from './components/ZenHeader';
 import { ProfileAvatarButton } from './components/ProfileAvatarButton';
-import { AccountSwitcher } from './components/AccountSwitcher';
+import { AccountPanel } from './components/AccountPanel';
+import { AuthScreen } from './components/AuthScreen';
 import { ITEM_DRAG_MIME } from './hooks/useCardDragPreview';
 import { placementSizeFromAspect, getItemAspectRatio } from './components/MoodboardCardFrame';
-import { PROFILES, PROFILE_STORAGE_KEY, getStoredProfileId } from './data/profiles';
+import { api, dataUrlToBlob, getToken, setToken } from './lib/api';
 
-const STORAGE_KEY = 'zen_gallery_images_v1';
-const FOLDERS_KEY = 'zen_gallery_folders_v1';
 const THEME_KEY = 'zen_gallery_theme_v1';
 
 export default function App() {
+  const [bootstrapping, setBootstrapping] = useState(true);
+  const [authed, setAuthed] = useState(false);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [googleConnected, setGoogleConnected] = useState(false);
+  const [storageMode, setStorageMode] = useState<'standard' | 'google'>('standard');
+  const [googleConfigured, setGoogleConfigured] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [theme, setTheme] = useState<ThemeMode>(() => {
     const saved = localStorage.getItem(THEME_KEY);
     return (saved as ThemeMode) || 'light';
   });
 
-  const [activeProfileId, setActiveProfileId] = useState(getStoredProfileId);
-  const [isAccountSwitcherOpen, setIsAccountSwitcherOpen] = useState(false);
-
-  const [images, setImages] = useState<ImageItem[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (err) {
-      console.error('Error loading gallery from localStorage:', err);
-    }
-    return INITIAL_IMAGES;
-  });
-
-  const [folders, setFolders] = useState<Folder[]>(() => {
-    try {
-      const saved = localStorage.getItem(FOLDERS_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (err) {
-      console.error('Error loading folders from localStorage:', err);
-    }
-    return [];
-  });
+  const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const [images, setImages] = useState<ImageItem[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
 
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -70,17 +60,64 @@ export default function App() {
   const [zenMode, setZenMode] = useState(false);
   const [columnCount, setColumnCount] = useState<number>(4);
 
+  const selectedFolderIdRef = useRef(selectedFolderId);
+  selectedFolderIdRef.current = selectedFolderId;
+
+  const refreshGallery = useCallback(async () => {
+    const [cardsRes, foldersRes] = await Promise.all([api.listCards(), api.listFolders()]);
+    setImages(cardsRes.cards);
+    setFolders(foldersRes.folders);
+  }, []);
+
+  const bootstrap = useCallback(async () => {
+    setBootstrapping(true);
+    setLoadError(null);
+    try {
+      const config = await api.config();
+      setStorageMode(config.storageMode);
+      setGoogleConfigured(config.googleConfigured);
+
+      const token = getToken();
+      if (!token) {
+        setAuthed(false);
+        return;
+      }
+      const me = await api.me();
+      setProfile(me.profile);
+      setGoogleConnected(me.googleConnected);
+      setStorageMode(me.storageMode);
+      if (me.profile.theme === 'light' || me.profile.theme === 'dark') {
+        setTheme(me.profile.theme);
+      }
+      setAuthed(true);
+      await refreshGallery();
+    } catch {
+      setToken(null);
+      setAuthed(false);
+      setProfile(null);
+    } finally {
+      setBootstrapping(false);
+    }
+  }, [refreshGallery]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const google = params.get('google');
+    if (google) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+    void bootstrap();
+  }, [bootstrap]);
+
   useEffect(() => {
     if (!isCardDragging) {
       setIsNearSelectionDock(false);
       return;
     }
-
     const updateProximity = (e: DragEvent) => {
       if (e.clientY === 0 && e.clientX === 0) return;
       setIsNearSelectionDock(e.clientY > window.innerHeight * 0.68);
     };
-
     window.addEventListener('dragover', updateProximity);
     window.addEventListener('drag', updateProximity);
     return () => {
@@ -91,61 +128,25 @@ export default function App() {
 
   useEffect(() => {
     const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
+    if (theme === 'dark') root.classList.add('dark');
+    else root.classList.remove('dark');
     localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders));
-    } catch (err) {
-      console.error('Error saving folders:', err);
+    if (authed) {
+      void api.updateProfile({ theme }).catch(() => undefined);
     }
-  }, [folders]);
+  }, [theme, authed]);
 
   useEffect(() => {
-    const saveToStorage = (items: ImageItem[]) => {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-        return true;
-      } catch {
-        return false;
-      }
-    };
+    if (!authed) return;
 
-    if (!saveToStorage(images)) {
-      const lighterItems = images.map((img, idx) => {
-        if (img.url?.startsWith('data:image/') && idx > 5) {
-          return { ...img, url: img.url };
-        }
-        return img;
-      });
-
-      if (!saveToStorage(lighterItems)) {
-        saveToStorage(
-          images.filter((i) => isNoteItem(i) || !i.url?.startsWith('data:image/')).slice(0, 30)
-        );
-      }
-    }
-  }, [images]);
-
-  useEffect(() => {
     let dragCounter = 0;
-
     const isInternalCardDrag = (dt: DataTransfer | null) => {
       if (!dt) return false;
-      const types = Array.from(dt.types);
-      return types.includes(ITEM_DRAG_MIME);
+      return Array.from(dt.types).includes(ITEM_DRAG_MIME);
     };
-
     const isExternalImageDrop = (dt: DataTransfer | null) => {
       if (!dt || isInternalCardDrag(dt)) return false;
       const types = Array.from(dt.types);
-      // Only accept real external file / URL drops — not in-app card moves
       return types.includes('Files') || types.includes('text/uri-list');
     };
 
@@ -153,11 +154,8 @@ export default function App() {
       e.preventDefault();
       if (isInternalCardDrag(e.dataTransfer)) return;
       dragCounter++;
-      if (isExternalImageDrop(e.dataTransfer)) {
-        setIsDragging(true);
-      }
+      if (isExternalImageDrop(e.dataTransfer)) setIsDragging(true);
     };
-
     const handleDragLeave = (e: DragEvent) => {
       e.preventDefault();
       if (isInternalCardDrag(e.dataTransfer)) return;
@@ -167,30 +165,21 @@ export default function App() {
         setIsDragging(false);
       }
     };
-
-    const handleDragOver = (e: DragEvent) => {
-      e.preventDefault();
-    };
-
+    const handleDragOver = (e: DragEvent) => e.preventDefault();
     const handleDrop = (e: DragEvent) => {
       e.preventDefault();
       dragCounter = 0;
       setIsDragging(false);
-
-      // Internal card drag (move to folder) must never create a new card
       if (isInternalCardDrag(e.dataTransfer)) return;
-
       if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-        handleProcessFiles(e.dataTransfer.files);
+        void handleProcessFiles(e.dataTransfer.files);
         return;
       }
-
-      // External image URL from another website
       const uri =
         e.dataTransfer?.getData('text/uri-list')?.split('\n').find((l) => l && !l.startsWith('#')) ||
         e.dataTransfer?.getData('text/plain');
       if (uri && (uri.startsWith('http://') || uri.startsWith('https://'))) {
-        handleAddFromUrl(uri, 'Image externe', ['Web']);
+        void handleAddFromUrl(uri, 'Image externe', ['Web']);
       }
     };
 
@@ -198,42 +187,18 @@ export default function App() {
     window.addEventListener('dragleave', handleDragLeave);
     window.addEventListener('dragover', handleDragOver);
     window.addEventListener('drop', handleDrop);
-
     return () => {
       window.removeEventListener('dragenter', handleDragEnter);
       window.removeEventListener('dragleave', handleDragLeave);
       window.removeEventListener('dragover', handleDragOver);
       window.removeEventListener('drop', handleDrop);
     };
-  }, []);
-
-  useEffect(() => {
-    const handlePaste = (e: ClipboardEvent) => {
-      if (e.clipboardData?.files && e.clipboardData.files.length > 0) {
-        const imageFiles = Array.from(e.clipboardData.files).filter((file) =>
-          file.type.startsWith('image/')
-        );
-        if (imageFiles.length > 0) {
-          handleProcessFiles(imageFiles);
-          return;
-        }
-      }
-
-      const pastedText = e.clipboardData?.getData('text');
-      if (pastedText && (pastedText.startsWith('http://') || pastedText.startsWith('https://'))) {
-        handleAddFromUrl(pastedText, 'Image collée', ['Collé']);
-      }
-    };
-
-    window.addEventListener('paste', handlePaste);
-    return () => window.removeEventListener('paste', handlePaste);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed]);
 
   const availableTags = useMemo(() => {
     const tagsSet = new Set<string>();
-    images.forEach((img) => {
-      if (img.tags) img.tags.forEach((t) => tagsSet.add(t));
-    });
+    images.forEach((img) => img.tags?.forEach((t) => tagsSet.add(t)));
     return Array.from(tagsSet);
   }, [images]);
 
@@ -241,10 +206,8 @@ export default function App() {
     (rawTag: string) => {
       const trimmed = rawTag.replace(/^#/, '').trim();
       if (!trimmed) return false;
-
       const canonical =
         availableTags.find((t) => t.toLowerCase() === trimmed.toLowerCase()) || trimmed;
-
       setActiveTagFilters((prev) => {
         if (prev.some((t) => t.toLowerCase() === canonical.toLowerCase())) return prev;
         return [...prev, canonical];
@@ -258,178 +221,136 @@ export default function App() {
     setActiveTagFilters((prev) => prev.filter((t) => t !== tag));
   }, []);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const activeElement = document.activeElement;
-      const isInputActive =
-        activeElement &&
-        (activeElement.tagName === 'INPUT' ||
-          activeElement.tagName === 'TEXTAREA' ||
-          (activeElement as HTMLElement).isContentEditable);
-
-      if (isInputActive || selectedImageId !== null || isAddModalOpen) {
-        return;
-      }
-
-      if (e.key === 'Escape') {
-        if (searchQuery) {
-          setSearchQuery('');
-          e.preventDefault();
-        } else if (activeTagFilters.length > 0) {
-          setActiveTagFilters([]);
-          e.preventDefault();
-        }
-        return;
-      }
-
-      if (e.key === 'Enter') {
-        const trimmed = searchQuery.trim();
-        if (trimmed.startsWith('#') && trimmed.length > 1) {
-          if (commitTagFilter(trimmed.slice(1))) {
-            setSearchQuery('');
-            e.preventDefault();
-          }
-        }
-        return;
-      }
-
-      if (e.key === 'Backspace') {
-        if (searchQuery.length > 0) {
-          setSearchQuery((prev) => prev.slice(0, -1));
-          e.preventDefault();
-        } else if (activeTagFilters.length > 0) {
-          setActiveTagFilters((prev) => prev.slice(0, -1));
-          e.preventDefault();
-        }
-        return;
-      }
-
-      if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) {
-        return;
-      }
-
-      setSearchQuery((prev) => prev + e.key);
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedImageId, isAddModalOpen, searchQuery, activeTagFilters, commitTagFilter]);
-
-  const handleProcessFiles = (files: FileList | File[]) => {
-    const fileArray = Array.from(files);
-    fileArray.forEach((file) => {
-      if (!file.type.startsWith('image/')) return;
-
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const rawDataUrl = event.target?.result as string;
-        if (!rawDataUrl) return;
-
-        const img = new Image();
-        img.onload = () => {
-          const maxDim = 1400;
-          let width = img.width;
-          let height = img.height;
-
-          if (width > maxDim || height > maxDim) {
-            if (width > height) {
-              height = Math.round((height * maxDim) / width);
-              width = maxDim;
-            } else {
-              width = Math.round((width * maxDim) / height);
-              height = maxDim;
-            }
-          }
-
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-
-          let compressedUrl = rawDataUrl;
-          if (ctx) {
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, width, height);
-            ctx.drawImage(img, 0, 0, width, height);
-            compressedUrl = canvas.toDataURL('image/jpeg', 0.82);
-          }
-
-          const ratio = width / height;
-          const newImageItem: ImageItem = {
-            id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-            url: compressedUrl,
-            title: file.name.replace(/\.[^/.]+$/, ''),
-            aspectRatio: ratio,
-            createdAt: Date.now(),
-            tags: ['Upload'],
-            source: 'uploaded',
-            kind: 'image',
-            folderId: selectedFolderId,
-            width,
-            height,
-          };
-
-          setImages((prev) => [newImageItem, ...prev]);
-        };
-        img.src = rawDataUrl;
-      };
-      reader.readAsDataURL(file);
+  const upsertCard = useCallback((card: ImageItem) => {
+    setImages((prev) => {
+      const idx = prev.findIndex((c) => c.id === card.id);
+      if (idx === -1) return [card, ...prev];
+      const next = [...prev];
+      next[idx] = card;
+      return next;
     });
+  }, []);
+
+  const handleProcessFiles = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    for (const file of fileArray) {
+      try {
+        const rawDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        const { blob, width, height, ratio } = await new Promise<{
+          blob: Blob;
+          width: number;
+          height: number;
+          ratio: number;
+        }>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => {
+            const maxDim = 1400;
+            let width = img.width;
+            let height = img.height;
+            if (width > maxDim || height > maxDim) {
+              if (width > height) {
+                height = Math.round((height * maxDim) / width);
+                width = maxDim;
+              } else {
+                width = Math.round((width * maxDim) / height);
+                height = maxDim;
+              }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            let out = rawDataUrl;
+            if (ctx) {
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, width, height);
+              ctx.drawImage(img, 0, 0, width, height);
+              out = canvas.toDataURL('image/jpeg', 0.82);
+            }
+            resolve({
+              blob: dataUrlToBlob(out),
+              width,
+              height,
+              ratio: width / height,
+            });
+          };
+          img.onerror = reject;
+          img.src = rawDataUrl;
+        });
+
+        const { card } = await api.createCard({
+          title: file.name.replace(/\.[^/.]+$/, ''),
+          kind: 'image',
+          tags: ['Upload'],
+          source: 'uploaded',
+          folderId: selectedFolderIdRef.current,
+          width,
+          height,
+          aspectRatio: ratio,
+          file: blob,
+          fileName: file.name.replace(/\.[^/.]+$/, '') + '.jpg',
+        });
+        upsertCard(card);
+      } catch (err) {
+        console.error('Upload failed', err);
+        setLoadError(err instanceof Error ? err.message : 'Upload failed');
+      }
+    }
   };
 
-  const handleAddFromUrl = (url: string, title?: string, tags?: string[]) => {
-    const img = new Image();
-    img.onload = () => {
-      const ratio = img.width / img.height;
-      const newImageItem: ImageItem = {
-        id: `img-url-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-        url,
+  const handleAddFromUrl = async (url: string, title?: string, tags?: string[]) => {
+    try {
+      const dims = await new Promise<{ w: number; h: number }>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve({ w: img.width, h: img.height });
+        img.onerror = () => resolve({ w: 0, h: 0 });
+        img.src = url;
+      });
+      const aspectRatio = dims.w && dims.h ? dims.w / dims.h : 1.2;
+      const { card } = await api.createCard({
         title: title || 'Image Web',
-        aspectRatio: ratio,
-        createdAt: Date.now(),
+        kind: 'image',
         tags: tags && tags.length > 0 ? tags : ['Web'],
         source: 'url',
-        kind: 'image',
-        folderId: selectedFolderId,
-      };
-      setImages((prev) => [newImageItem, ...prev]);
-    };
-    img.onerror = () => {
-      const newImageItem: ImageItem = {
-        id: `img-url-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
         url,
-        title: title || 'Image Web',
-        aspectRatio: 1.2,
-        createdAt: Date.now(),
-        tags: tags && tags.length > 0 ? tags : ['Web'],
-        source: 'url',
-        kind: 'image',
-        folderId: selectedFolderId,
-      };
-      setImages((prev) => [newImageItem, ...prev]);
-    };
-    img.src = url;
+        folderId: selectedFolderIdRef.current,
+        aspectRatio,
+        width: dims.w || undefined,
+        height: dims.h || undefined,
+      });
+      upsertCard(card);
+    } catch (err) {
+      console.error(err);
+      setLoadError(err instanceof Error ? err.message : 'Add URL failed');
+    }
   };
 
-  const handleAddNote = (markdown: string, title?: string, tags?: string[]) => {
-    const newNote: ImageItem = {
-      id: `note-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      url: '',
-      title: title || 'Note',
-      markdown,
-      kind: 'note',
-      aspectRatio: 1,
-      createdAt: Date.now(),
-      tags: tags && tags.length > 0 ? tags : ['Note'],
-      source: 'note',
-      folderId: selectedFolderId,
-    };
-    setImages((prev) => [newNote, ...prev]);
-    setSelectedImageId(newNote.id);
+  const handleAddNote = async (markdown: string, title?: string, tags?: string[]) => {
+    try {
+      const { card } = await api.createCard({
+        title: title || 'Note',
+        kind: 'note',
+        markdown,
+        tags: tags && tags.length > 0 ? tags : ['Note'],
+        source: 'note',
+        folderId: selectedFolderIdRef.current,
+        aspectRatio: 1,
+      });
+      upsertCard(card);
+      setSelectedImageId(card.id);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Note create failed');
+    }
   };
 
   const handleUpdateNote = useCallback(
-    (id: string, data: { title?: string; markdown?: string; additionalNotes?: string }) => {
+    async (id: string, data: { title?: string; markdown?: string; additionalNotes?: string }) => {
       setImages((prev) =>
         prev.map((item) =>
           item.id === id
@@ -444,38 +365,53 @@ export default function App() {
             : item
         )
       );
+      try {
+        const { card } = await api.updateCard(id, data);
+        upsertCard(card);
+      } catch (err) {
+        console.error(err);
+      }
     },
-    []
+    [upsertCard]
   );
 
-  const handleUpdateDrawing = useCallback((id: string, drawingData: string | null) => {
-    setImages((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item;
-        if (!drawingData) {
-          const { drawingData: _removed, ...rest } = item;
-          return rest;
-        }
-        return { ...item, drawingData };
-      })
-    );
-  }, []);
+  const handleUpdateDrawing = useCallback(
+    async (id: string, drawingData: string | null) => {
+      setImages((prev) =>
+        prev.map((item) => {
+          if (item.id !== id) return item;
+          if (!drawingData) {
+            const { drawingData: _removed, ...rest } = item;
+            return rest;
+          }
+          return { ...item, drawingData };
+        })
+      );
+      try {
+        const { card } = await api.updateCard(id, { drawingData });
+        upsertCard(card);
+      } catch (err) {
+        console.error(err);
+      }
+    },
+    [upsertCard]
+  );
 
-  const handleCreateFolder = useCallback((name: string, icon: string) => {
-    const folder: Folder = {
-      id: `folder-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      name,
-      icon,
-      createdAt: Date.now(),
-    };
+  const handleCreateFolder = useCallback(async (name: string, icon: string) => {
+    const { folder } = await api.createFolder(name, icon);
     setFolders((prev) => [...prev, folder]);
     return folder.id;
   }, []);
 
-  const handleMoveItemsToFolder = useCallback((itemIds: string[], folderId: string) => {
+  const handleMoveItemsToFolder = useCallback(async (itemIds: string[], folderId: string) => {
     setImages((prev) =>
       prev.map((img) => (itemIds.includes(img.id) ? { ...img, folderId } : img))
     );
+    try {
+      await api.moveCards(itemIds, folderId);
+    } catch (err) {
+      console.error(err);
+    }
   }, []);
 
   const clearSelectionDock = useCallback(() => {
@@ -490,23 +426,22 @@ export default function App() {
   const handleAssignSelectionToFolder = useCallback(
     (folderId: string) => {
       if (selectionDockIds.length === 0) return;
-      handleMoveItemsToFolder(selectionDockIds, folderId);
+      void handleMoveItemsToFolder(selectionDockIds, folderId);
       clearSelectionDock();
     },
     [selectionDockIds, handleMoveItemsToFolder, clearSelectionDock]
   );
 
   const handleCreateFolderAndAssign = useCallback(
-    (name: string, icon: string) => {
-      const folderId = handleCreateFolder(name, icon);
+    async (name: string, icon: string) => {
+      const folderId = await handleCreateFolder(name, icon);
       handleAssignSelectionToFolder(folderId);
     },
     [handleCreateFolder, handleAssignSelectionToFolder]
   );
 
-  const handleCreateMoodboard = useCallback(() => {
+  const handleCreateMoodboard = useCallback(async () => {
     if (selectionDockIds.length === 0) return;
-
     const canvasAR =
       typeof window !== 'undefined'
         ? window.innerWidth / Math.max(window.innerHeight - 72, 1)
@@ -529,31 +464,35 @@ export default function App() {
       };
     });
 
-    const moodboard: ImageItem = {
-      id: `moodboard-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      url: '',
-      title: 'Moodboard',
-      kind: 'moodboard',
-      moodboardPlacements: placements,
-      aspectRatio: 1.35,
-      createdAt: Date.now(),
-      tags: ['Moodboard'],
-      source: 'default',
-      folderId: selectedFolderId,
-    };
-
-    setImages((prev) => [moodboard, ...prev]);
-    setSelectedImageId(moodboard.id);
-    clearSelectionDock();
-  }, [selectionDockIds, selectedFolderId, clearSelectionDock, images]);
+    try {
+      const { card } = await api.createCard({
+        title: 'Moodboard',
+        kind: 'moodboard',
+        tags: ['Moodboard'],
+        source: 'default',
+        folderId: selectedFolderIdRef.current,
+        aspectRatio: 1.35,
+        moodboardPlacements: placements,
+      });
+      upsertCard(card);
+      setSelectedImageId(card.id);
+      clearSelectionDock();
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Moodboard failed');
+    }
+  }, [selectionDockIds, images, clearSelectionDock, upsertCard]);
 
   const handleUpdateMoodboard = useCallback(
-    (id: string, data: { title?: string; moodboardPlacements?: MoodboardPlacement[] }) => {
-      setImages((prev) =>
-        prev.map((item) => (item.id === id ? { ...item, ...data } : item))
-      );
+    async (id: string, data: { title?: string; moodboardPlacements?: MoodboardPlacement[] }) => {
+      setImages((prev) => prev.map((item) => (item.id === id ? { ...item, ...data } : item)));
+      try {
+        const { card } = await api.updateCard(id, data);
+        upsertCard(card);
+      } catch (err) {
+        console.error(err);
+      }
     },
-    []
+    [upsertCard]
   );
 
   const handleSelectionDockDrop = useCallback(
@@ -562,14 +501,10 @@ export default function App() {
       e.stopPropagation();
       setIsOverSelectionDock(false);
       setIsCardDragging(false);
-
       const itemId = getDraggedItemId(e);
       if (!itemId) return;
-
       const item = images.find((i) => i.id === itemId);
-      if (item && !isMoodboardItem(item)) {
-        addToSelectionDock(itemId);
-      }
+      if (item && !isMoodboardItem(item)) addToSelectionDock(itemId);
     },
     [addToSelectionDock, images]
   );
@@ -578,68 +513,81 @@ export default function App() {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
 
-  const handleToggleFavorite = useCallback((id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setImages((prev) =>
-      prev.map((img) =>
-        img.id === id ? { ...img, isFavorite: !img.isFavorite } : img
-      )
-    );
-  }, []);
+  const handleToggleFavorite = useCallback(
+    async (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      const current = images.find((i) => i.id === id);
+      if (!current) return;
+      const next = !current.isFavorite;
+      setImages((prev) =>
+        prev.map((img) => (img.id === id ? { ...img, isFavorite: next } : img))
+      );
+      try {
+        const { card } = await api.updateCard(id, { isFavorite: next });
+        upsertCard(card);
+      } catch (err) {
+        console.error(err);
+      }
+    },
+    [images, upsertCard]
+  );
 
   const handleDeleteImage = useCallback(
-    (id: string, e: React.MouseEvent) => {
+    async (id: string, e: React.MouseEvent) => {
       e.stopPropagation();
       setImages((prev) => prev.filter((img) => img.id !== id));
       if (selectedImageId === id) setSelectedImageId(null);
+      try {
+        await api.deleteCard(id);
+      } catch (err) {
+        console.error(err);
+      }
     },
     [selectedImageId]
   );
 
-  const handleAddTag = (id: string, newTag: string) => {
-    setImages((prev) =>
-      prev.map((img) => {
-        if (img.id !== id) return img;
-        const existingTags = img.tags || [];
-        if (existingTags.includes(newTag)) return img;
-        return { ...img, tags: [...existingTags, newTag] };
-      })
-    );
+  const handleAddTag = async (id: string, newTag: string) => {
+    const current = images.find((i) => i.id === id);
+    if (!current) return;
+    const existingTags = current.tags || [];
+    if (existingTags.includes(newTag)) return;
+    const tags = [...existingTags, newTag];
+    setImages((prev) => prev.map((img) => (img.id === id ? { ...img, tags } : img)));
+    try {
+      const { card } = await api.updateCard(id, { tags });
+      upsertCard(card);
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const handleRemoveTag = (id: string, tagToRemove: string) => {
-    setImages((prev) =>
-      prev.map((img) => {
-        if (img.id !== id) return img;
-        return {
-          ...img,
-          tags: (img.tags || []).filter((t) => t !== tagToRemove),
-        };
-      })
-    );
+  const handleRemoveTag = async (id: string, tagToRemove: string) => {
+    const current = images.find((i) => i.id === id);
+    if (!current) return;
+    const tags = (current.tags || []).filter((t) => t !== tagToRemove);
+    setImages((prev) => prev.map((img) => (img.id === id ? { ...img, tags } : img)));
+    try {
+      const { card } = await api.updateCard(id, { tags });
+      upsertCard(card);
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const folderItemCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     images.forEach((img) => {
-      if (img.folderId) {
-        counts[img.folderId] = (counts[img.folderId] || 0) + 1;
-      }
+      if (img.folderId) counts[img.folderId] = (counts[img.folderId] || 0) + 1;
     });
     return counts;
   }, [images]);
-
 
   const showSelectionDock = isCardDragging || selectionDockIds.length > 0;
 
   const filteredImages = useMemo(() => {
     return images.filter((img) => {
       if (isFavoriteFilterActive && !img.isFavorite) return false;
-
-      if (selectedFolderId && img.folderId !== selectedFolderId) {
-        return false;
-      }
-
+      if (selectedFolderId && img.folderId !== selectedFolderId) return false;
       if (activeTagFilters.length > 0) {
         const itemTags = img.tags || [];
         const matchesAllTags = activeTagFilters.every((filter) =>
@@ -647,9 +595,7 @@ export default function App() {
         );
         if (!matchesAllTags) return false;
       }
-
       const trimmedQuery = searchQuery.trim();
-      // While composing a #tag filter, don't apply text search
       if (trimmedQuery && !trimmedQuery.startsWith('#')) {
         const query = trimmedQuery.toLowerCase();
         const matchesTitle = img.title.toLowerCase().includes(query);
@@ -657,7 +603,6 @@ export default function App() {
         const matchesMarkdown = img.markdown?.toLowerCase().includes(query);
         if (!matchesTitle && !matchesTag && !matchesMarkdown) return false;
       }
-
       return true;
     });
   }, [images, isFavoriteFilterActive, selectedFolderId, searchQuery, activeTagFilters]);
@@ -671,23 +616,40 @@ export default function App() {
   const selectedMoodboard =
     selectedItem && isMoodboardItem(selectedItem) ? selectedItem : null;
 
-  const activeProfile = useMemo(
-    () => PROFILES.find((p) => p.id === activeProfileId) ?? PROFILES[0],
-    [activeProfileId]
-  );
+  const handleLogout = () => {
+    setToken(null);
+    setAuthed(false);
+    setProfile(null);
+    setImages([]);
+    setFolders([]);
+    setIsAccountOpen(false);
+    void api.logout().catch(() => undefined);
+  };
 
-  useEffect(() => {
+  const handleAuthenticated = async (p: UserProfile) => {
+    setProfile(p);
+    setAuthed(true);
     try {
-      localStorage.setItem(PROFILE_STORAGE_KEY, activeProfileId);
+      const me = await api.me();
+      setGoogleConnected(me.googleConnected);
+      setStorageMode(me.storageMode);
+      await refreshGallery();
     } catch (err) {
-      console.error('Error saving active profile:', err);
+      setLoadError(err instanceof Error ? err.message : 'Load failed');
     }
-  }, [activeProfileId]);
+  };
 
-  const handleSelectProfile = useCallback((id: string) => {
-    setActiveProfileId(id);
-    setIsAccountSwitcherOpen(false);
-  }, []);
+  if (bootstrapping) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-sm text-zinc-500">
+        Chargement…
+      </div>
+    );
+  }
+
+  if (!authed || !profile) {
+    return <AuthScreen onAuthenticated={handleAuthenticated} />;
+  }
 
   return (
     <div
@@ -697,20 +659,29 @@ export default function App() {
     >
       <DropOverlay isDragging={isDragging} />
 
-      {!isAccountSwitcherOpen && (
-        <ProfileAvatarButton
-          profile={activeProfile}
-          onClick={() => setIsAccountSwitcherOpen(true)}
-        />
+      {loadError && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[90] rounded-xl bg-rose-600 text-white text-sm px-4 py-2 shadow-lg">
+          {loadError}
+          <button type="button" className="ml-3 underline" onClick={() => setLoadError(null)}>
+            OK
+          </button>
+        </div>
+      )}
+
+      {!isAccountOpen && (
+        <ProfileAvatarButton profile={profile} onClick={() => setIsAccountOpen(true)} />
       )}
 
       <AnimatePresence>
-        {isAccountSwitcherOpen && (
-          <AccountSwitcher
-            profiles={PROFILES}
-            activeProfileId={activeProfileId}
-            onSelectProfile={handleSelectProfile}
-            onClose={() => setIsAccountSwitcherOpen(false)}
+        {isAccountOpen && (
+          <AccountPanel
+            profile={profile}
+            googleConnected={googleConnected}
+            storageMode={storageMode}
+            googleConfigured={googleConfigured}
+            onClose={() => setIsAccountOpen(false)}
+            onLogout={handleLogout}
+            onGoogleChange={setGoogleConnected}
           />
         )}
       </AnimatePresence>
@@ -727,9 +698,7 @@ export default function App() {
         onCreateFolder={handleCreateFolderAndAssign}
         onAssignFolder={handleAssignSelectionToFolder}
         onCreateMoodboard={handleCreateMoodboard}
-        onRemoveItem={(id) =>
-          setSelectionDockIds((prev) => prev.filter((x) => x !== id))
-        }
+        onRemoveItem={(id) => setSelectionDockIds((prev) => prev.filter((x) => x !== id))}
         onClear={clearSelectionDock}
         onDragOver={(e) => {
           e.preventDefault();
@@ -825,9 +794,9 @@ export default function App() {
       <AddImageModal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
-        onAddFromUrl={handleAddFromUrl}
-        onAddFiles={handleProcessFiles}
-        onAddNote={handleAddNote}
+        onAddFromUrl={(url, title, tags) => void handleAddFromUrl(url, title, tags)}
+        onAddFiles={(files) => void handleProcessFiles(files)}
+        onAddNote={(md, title, tags) => void handleAddNote(md, title, tags)}
       />
     </div>
   );

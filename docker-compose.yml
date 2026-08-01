@@ -1,0 +1,17 @@
+services:
+  cobea-api:
+    build: ./server
+    container_name: cobea-api
+    restart: unless-stopped
+    ports:
+      - "3847:3847"
+    env_file:
+      - ./server/.env
+    networks:
+      - waatch-net
+
+networks:
+  waatch-net:
+    # Rename if your TerraMaster Postgres stack uses another network
+    external: true
+    name: waatch-net

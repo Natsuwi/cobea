@@ -53,6 +53,7 @@ export interface UserProfile {
   id: string;
   name: string;
   avatarUrl: string;
+  theme?: ThemeMode;
 }
 
 export function isNoteItem(item: ImageItem): boolean {

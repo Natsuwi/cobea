@@ -132,6 +132,9 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
       }
 
       const img = new Image();
+      if (data.startsWith('http://') || data.startsWith('https://')) {
+        img.crossOrigin = 'anonymous';
+      }
       img.onload = () => {
         if (activeItemRef.current !== itemId) return;
         const c = canvasRef.current;
@@ -203,6 +206,9 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
       }
 
       const img = new Image();
+      if (data.startsWith('http://') || data.startsWith('https://')) {
+        img.crossOrigin = 'anonymous';
+      }
       img.onload = () => {
         if (activeItemRef.current !== itemId) return;
         const c = canvasRef.current;
@@ -251,6 +257,9 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
 
       if (snapshot && snapshot !== 'data:,') {
         const img = new Image();
+        if (snapshot.startsWith('http://') || snapshot.startsWith('https://')) {
+          img.crossOrigin = 'anonymous';
+        }
         img.onload = () => {
           if (activeItemRef.current !== itemId) return;
           const c = canvasRef.current;
