@@ -2,8 +2,48 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Brand accent — driven by html[data-accent] */
+@theme inline {
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-muted: var(--accent-muted);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-text: var(--accent-text);
+}
+
 @layer base {
+  :root,
+  html[data-accent='violet'] {
+    --accent: #970bf5;
+    --accent-hover: #b44fff;
+    --accent-fg: #ffffff;
+    --accent-muted: color-mix(in srgb, #970bf5 16%, transparent);
+    --accent-soft: color-mix(in srgb, #970bf5 10%, transparent);
+    --accent-text: #7a09c4;
+    --accent-gradient-to: #f43f5e;
+  }
+
+  html[data-accent='amber'] {
+    --accent: #f59e0b;
+    --accent-hover: #fbbf24;
+    --accent-fg: #09090b;
+    --accent-muted: color-mix(in srgb, #f59e0b 18%, transparent);
+    --accent-soft: color-mix(in srgb, #f59e0b 12%, transparent);
+    --accent-text: #b45309;
+    --accent-gradient-to: #fb7185;
+  }
+
+  html.dark[data-accent='violet'] {
+    --accent-text: #c77dff;
+  }
+
+  html.dark[data-accent='amber'] {
+    --accent-text: #fbbf24;
+  }
+
   :root {
+    color-scheme: light;
     --bg-main: #f5f5f3;
     --text-main: #111113;
     --text-muted: #6e6e73;
@@ -11,9 +51,12 @@
     --card-border: rgba(0, 0, 0, 0.06);
     --navbar-bg: rgba(255, 255, 255, 0.85);
     --navbar-border: rgba(0, 0, 0, 0.08);
+    --scrollbar-thumb: rgba(0, 0, 0, 0.18);
+    --scrollbar-thumb-hover: rgba(0, 0, 0, 0.32);
   }
 
   .dark {
+    color-scheme: dark;
     --bg-main: #0b0c0e;
     --text-main: #f5f5f7;
     --text-muted: #8e8e93;
@@ -21,10 +64,16 @@
     --card-border: rgba(255, 255, 255, 0.08);
     --navbar-bg: rgba(20, 21, 24, 0.85);
     --navbar-border: rgba(255, 255, 255, 0.12);
+    --scrollbar-thumb: rgba(255, 255, 255, 0.22);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.38);
+  }
+
+  html,
+  body {
+    background-color: var(--bg-main);
   }
 
   body {
-    background-color: var(--bg-main);
     color: var(--text-main);
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Plus Jakarta Sans', Roboto, sans-serif;
     transition: background-color 0.3s ease, color 0.3s ease;
@@ -34,9 +83,20 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  /* Keep dark chrome (incl. scrollbar) while in Fullscreen API / Zen */
+  html:fullscreen,
+  html:-webkit-full-screen {
+    background-color: var(--bg-main);
+  }
 }
 
-/* Custom smooth scrollbar */
+/* Custom smooth scrollbar — theme-aware (incl. Zen fullscreen) */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
@@ -47,12 +107,12 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(140, 140, 140, 0.2);
+  background: var(--scrollbar-thumb);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(140, 140, 140, 0.35);
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* Glassmorphism support */
@@ -71,6 +131,15 @@
 
 .dark .glass-card {
   background-color: rgba(20, 21, 24, 0.6);
+}
+
+/* Profile initials placeholder — follows accent preference */
+.avatar-accent-gradient {
+  background-image: linear-gradient(
+    to bottom right,
+    var(--accent),
+    var(--accent-gradient-to)
+  );
 }
 
 /* Hide scrollbar for clean UI where needed */

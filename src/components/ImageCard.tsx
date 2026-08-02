@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { Heart, Maximize2, Trash2, Tag as TagIcon } from 'lucide-react';
 import { ImageItem } from '../types';
@@ -124,7 +124,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
             <div className="flex items-center justify-between w-full pointer-events-auto">
               {image.tags && image.tags.length > 0 ? (
                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wider uppercase text-white/95 bg-black/30 dark:bg-black/50 backdrop-blur-xl px-3 py-1 rounded-full border border-white/10 shadow-sm">
-                  <TagIcon className="w-3 h-3 text-amber-300" />
+                  <TagIcon className="w-3 h-3 text-accent-hover" />
                   {image.tags[0]}
                 </span>
               ) : (

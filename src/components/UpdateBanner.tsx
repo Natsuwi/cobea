@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { motion } from 'motion/react';
 import { RefreshCw, X } from 'lucide-react';
 
@@ -45,7 +45,7 @@ export const UpdateBanner: React.FC<UpdateBannerProps> = ({
           type="button"
           disabled={updating}
           onClick={onUpdate}
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 text-sm font-semibold px-3 py-2 disabled:opacity-60 transition-colors"
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-accent hover:bg-accent-hover text-accent-fg text-sm font-semibold px-3 py-2 disabled:opacity-60 transition-colors"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${updating ? 'animate-spin' : ''}`} />
           {updating ? 'Mise à jour…' : 'Mettre à jour'}

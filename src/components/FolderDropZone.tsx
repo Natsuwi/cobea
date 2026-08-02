@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Folder } from '../types';
 import { FolderIcon } from '../lib/folderIcons';
@@ -36,7 +36,7 @@ export const FolderDropZone: React.FC<FolderDropZoneProps> = ({
           <div
             className={`w-[280px] sm:w-[320px] rounded-2xl border-2 border-dashed px-6 py-8 flex flex-col items-center text-center gap-3 transition-all duration-200 backdrop-blur-xl ${
               isOver
-                ? 'border-amber-400 bg-amber-400/15 dark:bg-amber-400/20 scale-105 shadow-xl shadow-amber-400/20'
+                ? 'border-accent bg-accent-muted scale-105 shadow-xl shadow-accent/20'
                 : 'border-zinc-400/60 dark:border-zinc-500/50 bg-white/90 dark:bg-zinc-900/90 shadow-2xl shadow-black/10'
             }`}
           >
@@ -45,7 +45,7 @@ export const FolderDropZone: React.FC<FolderDropZoneProps> = ({
               transition={{ duration: 0.6, repeat: isOver ? Infinity : 0 }}
               className={`w-14 h-14 rounded-2xl flex items-center justify-center ${
                 isOver
-                  ? 'bg-amber-400 text-zinc-950'
+                  ? 'bg-accent text-accent-fg'
                   : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'
               }`}
             >

@@ -27,6 +27,38 @@ const placementSchema = z.object({
   zIndex: z.number().optional(),
 });
 
+function parseImageDataUrl(dataUrl: string): { mime: string; buffer: Buffer } | null {
+  const marker = ';base64,';
+  if (!dataUrl.startsWith('data:image/') || !dataUrl.includes(marker)) return null;
+  const idx = dataUrl.indexOf(marker);
+  const mime = dataUrl.slice('data:'.length, idx);
+  if (!/^image\/[a-zA-Z0-9.+-]+$/.test(mime)) return null;
+  try {
+    return { mime, buffer: Buffer.from(dataUrl.slice(idx + marker.length), 'base64') };
+  } catch {
+    return null;
+  }
+}
+
+async function upsertCardDrawing(cardId: string, buffer: Buffer, mimeType: string) {
+  const existingFile = await prisma.cardFile.findUnique({ where: { cardId } });
+  if (existingFile) {
+    return prisma.cardFile.update({
+      where: { id: existingFile.id },
+      data: { drawingData: buffer, drawingMimeType: mimeType },
+    });
+  }
+  return prisma.cardFile.create({
+    data: {
+      cardId,
+      mimeType: 'application/octet-stream',
+      filename: 'drawing.png',
+      drawingData: buffer,
+      drawingMimeType: mimeType,
+    },
+  });
+}
+
 cardsRouter.get('/', async (req: AuthRequest, res) => {
   const cards = await listSerializedCards(req.auth!.profileId);
   res.json({ cards });
@@ -194,26 +226,12 @@ cardsRouter.patch('/:id', upload.single('file'), async (req: AuthRequest, res) =
             });
           }
         } else {
-          const match = /^data:(image\/[a-zA-Z+]+);base64,(.+)$/.exec(j.drawingData);
-          if (!match) {
+          const parsedDrawing = parseImageDataUrl(j.drawingData);
+          if (!parsedDrawing) {
             res.status(400).json({ error: 'Invalid drawingData data URL' });
             return;
           }
-          const drawingBuffer = Buffer.from(match[2], 'base64');
-          await prisma.cardFile.upsert({
-            where: { cardId: existing.id },
-            create: {
-              cardId: existing.id,
-              mimeType: 'application/octet-stream',
-              filename: 'drawing.png',
-              drawingData: drawingBuffer,
-              drawingMimeType: match[1],
-            },
-            update: {
-              drawingData: drawingBuffer,
-              drawingMimeType: match[1],
-            },
-          });
+          await upsertCardDrawing(existing.id, parsedDrawing.buffer, parsedDrawing.mime);
         }
       }
     }
@@ -318,6 +336,65 @@ cardsRouter.post('/batch/move', async (req: AuthRequest, res) => {
   res.json({ ok: true });
 });
 
+/** Binary drawing upload — avoids huge JSON data-URLs */
+cardsRouter.put('/:id/drawing', upload.single('drawing'), async (req: AuthRequest, res) => {
+  try {
+    const existing = await prisma.card.findFirst({
+      where: { id: req.params.id, profileId: req.auth!.profileId },
+    });
+    if (!existing) {
+      res.status(404).json({ error: 'Not found' });
+      return;
+    }
+    if (!req.file?.buffer?.length) {
+      res.status(400).json({ error: 'drawing file required' });
+      return;
+    }
+    const mime = req.file.mimetype?.startsWith('image/')
+      ? req.file.mimetype
+      : 'image/png';
+    await upsertCardDrawing(existing.id, req.file.buffer, mime);
+    // bump updatedAt so clients can cache-bust the drawing URL
+    const card = await prisma.card.update({
+      where: { id: existing.id },
+      data: { updatedAt: new Date() },
+      include: { file: true },
+    });
+    res.json({ card: serializeCard(card) });
+  } catch (err) {
+    console.error('Put drawing error', err);
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Upload failed' });
+  }
+});
+
+cardsRouter.delete('/:id/drawing', async (req: AuthRequest, res) => {
+  try {
+    const existing = await prisma.card.findFirst({
+      where: { id: req.params.id, profileId: req.auth!.profileId },
+      include: { file: true },
+    });
+    if (!existing) {
+      res.status(404).json({ error: 'Not found' });
+      return;
+    }
+    if (existing.file) {
+      await prisma.cardFile.update({
+        where: { id: existing.file.id },
+        data: { drawingData: null, drawingMimeType: null },
+      });
+    }
+    const card = await prisma.card.update({
+      where: { id: existing.id },
+      data: { updatedAt: new Date() },
+      include: { file: true },
+    });
+    res.json({ card: serializeCard(card) });
+  } catch (err) {
+    console.error('Delete drawing error', err);
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Delete failed' });
+  }
+});
+
 async function serveCardMedia(
   req: AuthRequest,
   res: import('express').Response,
@@ -338,7 +415,7 @@ async function serveCardMedia(
       return;
     }
     res.setHeader('Content-Type', card.file.drawingMimeType || 'image/png');
-    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.setHeader('Cache-Control', 'private, no-cache');
     res.send(Buffer.from(card.file.drawingData));
     return;
   }

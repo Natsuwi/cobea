@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ChevronDown,
@@ -18,6 +18,7 @@ import {
 import { ThemeMode, UserProfile } from '../types';
 import { ACCOUNT_SWITCHER_BG } from '../data/profiles';
 import { api, type DriveFolderRef, type StorageState } from '../lib/api';
+import { ACCENT_OPTIONS, type AccentId } from '../lib/accent';
 import { CobeaBrand } from './CobeaBrand';
 import { DriveFolderPicker } from './DriveFolderPicker';
 import { GoogleOAuthGuide } from './GoogleOAuthGuide';
@@ -40,6 +41,8 @@ interface AccountPanelProps {
   profile: UserProfile;
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
+  accent: AccentId;
+  onAccentChange: (accent: AccentId) => void;
   columnCount: number;
   onColumnCountChange: (count: number) => void;
   googleConnected: boolean;
@@ -60,6 +63,8 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
   profile,
   theme,
   onThemeChange,
+  accent,
+  onAccentChange,
   columnCount,
   onColumnCountChange,
   googleConnected,
@@ -381,7 +386,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                       draggable={false}
                     />
                   ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-amber-400 to-rose-400 flex items-center justify-center text-2xl font-semibold text-white">
+                    <div className="w-full h-full avatar-accent-gradient flex items-center justify-center text-2xl font-semibold text-white">
                       {profile.name.slice(0, 1).toUpperCase()}
                     </div>
                   )}
@@ -437,6 +442,36 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                   </div>
                 </div>
 
+                <div className="flex items-center justify-between gap-3">
+                  <div className="space-y-0.5 min-w-0">
+                    <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                      Couleur d’accent
+                    </p>
+                    <p className="text-xs text-zinc-500">Boutons, focus et highlights</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {ACCENT_OPTIONS.map((opt) => {
+                      const selected = accent === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => onAccentChange(opt.id)}
+                          title={opt.label}
+                          aria-label={opt.label}
+                          aria-pressed={selected}
+                          className={`relative w-8 h-8 rounded-full transition-transform ${
+                            selected
+                              ? 'scale-110 ring-2 ring-offset-2 ring-zinc-900 dark:ring-zinc-100 ring-offset-white dark:ring-offset-zinc-900'
+                              : 'hover:scale-105 opacity-90'
+                          }`}
+                          style={{ backgroundColor: `#${opt.hex}` }}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
                     <div className="space-y-0.5 min-w-0">
@@ -479,7 +514,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                       Stockage
                     </p>
                     <div className="flex items-center gap-2 text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                      <HardDrive className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                      <HardDrive className="w-4 h-4 shrink-0 text-accent-text" />
                       Google Drive
                     </div>
                     <p className="text-xs text-zinc-500 leading-relaxed">
@@ -495,8 +530,8 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                     aria-label="Activer Google Drive"
                     disabled={busy}
                     onClick={toggleGoogle}
-                    className={`relative shrink-0 w-12 h-7 rounded-full transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60 ${
-                      googleOn ? 'bg-amber-500' : 'bg-zinc-300 dark:bg-zinc-600'
+                    className={`relative shrink-0 w-12 h-7 rounded-full transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${
+                      googleOn ? 'bg-accent' : 'bg-zinc-300 dark:bg-zinc-600'
                     }`}
                   >
                     <span
@@ -521,7 +556,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                           onChange={(e) => setClientId(e.target.value)}
                           placeholder="Client ID"
                           autoComplete="off"
-                          className="w-full rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-400/40"
+                          className="w-full rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
                         />
                         <input
                           type="password"
@@ -529,7 +564,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                           onChange={(e) => setClientSecret(e.target.value)}
                           placeholder="Client Secret"
                           autoComplete="off"
-                          className="w-full rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-400/40"
+                          className="w-full rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
                         />
                         <button
                           type="button"
@@ -553,7 +588,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                           type="button"
                           disabled={busy}
                           onClick={connectGoogle}
-                          className="flex items-center justify-center gap-2 w-full rounded-xl bg-zinc-900 dark:bg-amber-500 text-white dark:text-zinc-950 py-2.5 text-sm font-medium disabled:opacity-50"
+                          className="flex items-center justify-center gap-2 w-full rounded-xl bg-accent text-accent-fg py-2.5 text-sm font-medium disabled:opacity-50"
                         >
                           <Link2 className="w-4 h-4" />
                           Connecter Google Drive
@@ -580,7 +615,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                                   driveUsage.percentUsed >= 80
                                     ? 'bg-rose-500'
                                     : driveUsage.percentUsed >= 50
-                                      ? 'bg-amber-500'
+                                      ? 'bg-accent'
                                       : 'bg-emerald-500'
                                 }`}
                                 style={{
@@ -625,7 +660,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                               className="overflow-hidden"
                             >
                               <div className="space-y-3 pt-1">
-                                <p className="text-xs text-amber-700 dark:text-amber-300/90 bg-amber-50 dark:bg-amber-500/10 rounded-xl px-3 py-2">
+                                <p className="text-xs text-accent-text bg-accent-soft rounded-xl px-3 py-2">
                                   Nouveau scope Drive : si la liste des dossiers échoue,
                                   déconnecte puis reconnecte Google.
                                 </p>
@@ -676,7 +711,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                                       type="button"
                                       disabled={busy || googleSyncFolders.length === 0}
                                       onClick={() => void runSync()}
-                                      className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-zinc-900 dark:bg-amber-500 text-white dark:text-zinc-950 py-2.5 text-sm font-medium disabled:opacity-40"
+                                      className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-accent text-accent-fg py-2.5 text-sm font-medium disabled:opacity-40"
                                     >
                                       <RefreshCw
                                         className={`w-4 h-4 ${syncProgress ? 'animate-spin' : ''}`}
@@ -701,7 +736,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                                     <div className="space-y-1.5">
                                       <div className="h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
                                         <div
-                                          className="h-full rounded-full bg-amber-500 transition-[width] duration-300 ease-out"
+                                          className="h-full rounded-full bg-accent transition-[width] duration-300 ease-out"
                                           style={{
                                             width: `${Math.min(100, Math.max(2, syncProgress.percent))}%`,
                                           }}

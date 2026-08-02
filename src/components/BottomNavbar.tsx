@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Plus, Search, Eye, X, Sparkles } from 'lucide-react';
 
@@ -104,7 +104,7 @@ export const BottomNavbar: React.FC<BottomNavbarProps> = ({
           onClick={onToggleZenMode}
           className="flex items-center gap-2 px-4 py-2 rounded-full bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 backdrop-blur-md text-xs font-medium tracking-wide shadow-xl hover:scale-105 transition-all duration-300"
         >
-          <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+          <Sparkles className="w-3.5 h-3.5 text-accent-hover" />
           <span>Quitter le mode Zen</span>
         </motion.button>
       </div>

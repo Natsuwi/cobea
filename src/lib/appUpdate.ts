@@ -76,7 +76,14 @@ async function unregisterServiceWorkers() {
   await Promise.all(regs.map((reg) => reg.unregister()));
 }
 
-const PRESERVE_KEYS = ['cobea_token', 'zen_gallery_theme_v1', 'zen_gallery_columns_v1', DISMISSED_KEY] as const;
+const PRESERVE_KEYS = [
+  'cobea_token',
+  'cobea_accounts_v1',
+  'zen_gallery_theme_v1',
+  'zen_gallery_columns_v1',
+  'zen_gallery_accent_v1',
+  DISMISSED_KEY,
+] as const;
 
 /**
  * Hard refresh: purge Cache API, SW, cookies, sessionStorage,

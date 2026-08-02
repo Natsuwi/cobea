@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Folder, LayoutGrid, X } from 'lucide-react';
 import { ImageItem, isNoteItem } from '../types';
@@ -163,7 +163,7 @@ export const CardSelectionDock: React.FC<CardSelectionDockProps> = ({
                       className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white dark:bg-zinc-900 border border-black/10 dark:border-white/10 shadow-xl hover:scale-105 transition-transform text-sm font-medium text-zinc-800 dark:text-zinc-100"
                       title="Assigner à un dossier"
                     >
-                      <Folder className="w-4 h-4 text-amber-500" />
+                      <Folder className="w-4 h-4 text-accent" />
                       <span className="hidden sm:inline">Dossier</span>
                     </button>
                     <FolderPicker

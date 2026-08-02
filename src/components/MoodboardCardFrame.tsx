@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { ImageItem, MoodboardPlacement, isNoteItem } from '../types';
 import { MarkdownPreview } from './MarkdownPreview';
 import { FileCardPreview, isDisplayableImageItem } from './FileCardPreview';
@@ -112,7 +112,7 @@ export function MoodboardCardFrame({
           fixedAspect ? 'h-full' : ''
         } ${
           isSelected
-            ? 'border-amber-400 ring-2 ring-amber-400/40'
+            ? 'border-accent ring-2 ring-accent/40'
             : 'border-white/10'
         } ${interactive ? 'cursor-grab active:cursor-grabbing' : ''}`}
       >

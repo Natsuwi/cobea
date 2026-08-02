@@ -1,8 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, LayoutGrid } from 'lucide-react';
 import { ImageItem, MoodboardPlacement } from '../types';
 import { DetailDrawingLayer } from './drawing/DetailDrawingLayer';
+import { CobeaLogoMark } from './CobeaBrand';
+import { isDisplayableImageItem } from './FileCardPreview';
 import {
   MoodboardCardFrame,
   CardInteraction,
@@ -35,9 +37,19 @@ interface PanState {
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 const DOT_GRID = 24;
+const READY_TIMEOUT_MS = 5000;
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
+}
+
+function preloadImage(url: string): Promise<void> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve();
+    img.onerror = () => resolve();
+    img.src = url;
+  });
 }
 
 export const MoodboardModal: React.FC<MoodboardModalProps> = ({
@@ -57,12 +69,16 @@ export const MoodboardModal: React.FC<MoodboardModalProps> = ({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
+  const [drawingReady, setDrawingReady] = useState(false);
+  const [assetsReady, setAssetsReady] = useState(false);
   const interactionRef = useRef<CardInteraction | null>(null);
   const panRef = useRef<PanState | null>(null);
   const panOffsetRef = useRef({ x: 0, y: 0 });
   const zoomRef = useRef(1);
   panOffsetRef.current = pan;
   zoomRef.current = zoom;
+
+  const contentReady = drawingReady && assetsReady;
 
   useEffect(() => {
     if (!moodboard) return;
@@ -75,7 +91,48 @@ export const MoodboardModal: React.FC<MoodboardModalProps> = ({
     setZoom(1);
     panRef.current = null;
     setIsPanning(false);
+    setDrawingReady(false);
+    setAssetsReady(false);
   }, [moodboard?.id]);
+
+  // Preload card images so they appear with the drawing layer
+  useEffect(() => {
+    if (!moodboard) return;
+    let cancelled = false;
+    const itemById = new Map(allItems.map((i) => [i.id, i]));
+    const urls = (moodboard.moodboardPlacements || [])
+      .map((p) => itemById.get(p.itemId))
+      .filter((item): item is ImageItem => Boolean(item))
+      .filter((item) => isDisplayableImageItem(item) && Boolean(item.url))
+      .map((item) => item.url);
+
+    const unique = [...new Set(urls)];
+    const finish = () => {
+      if (!cancelled) setAssetsReady(true);
+    };
+
+    if (unique.length === 0) {
+      finish();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void Promise.all(unique.map(preloadImage)).then(finish);
+    const timeout = window.setTimeout(finish, READY_TIMEOUT_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when opening a board
+  }, [moodboard?.id, allItems]);
+
+  // Safety: never block the UI forever if drawing ready never fires
+  useEffect(() => {
+    if (!moodboard || drawingReady) return;
+    const timeout = window.setTimeout(() => setDrawingReady(true), READY_TIMEOUT_MS);
+    return () => window.clearTimeout(timeout);
+  }, [moodboard?.id, moodboard, drawingReady]);
 
   useEffect(() => {
     if (!moodboard) return;
@@ -389,9 +446,13 @@ export const MoodboardModal: React.FC<MoodboardModalProps> = ({
           exit={{ opacity: 0 }}
           className="absolute inset-0 flex flex-col overflow-hidden"
         >
-          <header className="shrink-0 z-10 flex items-center justify-between px-4 md:px-8 py-4 border-b border-white/10 bg-[#0a0a0b]">
+          <header
+            className={`shrink-0 z-10 flex items-center justify-between px-4 md:px-8 py-4 border-b border-white/10 bg-[#0a0a0b] transition-opacity duration-300 ${
+              contentReady ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            }`}
+          >
             <div className="flex items-center gap-3 min-w-0">
-              <LayoutGrid className="w-5 h-5 text-amber-400 shrink-0" />
+              <LayoutGrid className="w-5 h-5 text-accent shrink-0" />
               <input
                 type="text"
                 value={title}
@@ -402,7 +463,10 @@ export const MoodboardModal: React.FC<MoodboardModalProps> = ({
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => {
+                persistPlacements();
+                onClose();
+              }}
               className="p-2.5 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
               title="Fermer"
             >
@@ -410,66 +474,97 @@ export const MoodboardModal: React.FC<MoodboardModalProps> = ({
             </button>
           </header>
 
-          <div ref={layerRef} className="flex-1 min-h-0 overflow-hidden flex flex-col">
-          <DetailDrawingLayer
-            itemId={moodboard.id}
-            drawingData={moodboard.drawingData}
-            onDrawingChange={onUpdateDrawing}
-            toolboxAlwaysVisible
-            drawModeActive={interactionMode === 'draw'}
-            contentOffset={{ x: pan.x, y: pan.y, scale: zoom }}
-            onSetDrawMode={(active) => {
-              setInteractionMode(active ? 'draw' : 'cursor');
-              if (!active) setSelectedId(null);
-            }}
-            className="flex-1 min-h-0 overflow-hidden moodboard-canvas-bg"
-            style={{
-              backgroundPosition: `${pan.x}px ${pan.y}px`,
-              backgroundSize: `${DOT_GRID * zoom}px ${DOT_GRID * zoom}px`,
-            }}
-          >
-            <div
-              ref={canvasRef}
-              className={`relative w-full h-full z-[5] ${
-                interactionMode === 'cursor'
-                  ? isPanning
-                    ? 'cursor-grabbing'
-                    : 'cursor-grab'
-                  : ''
-              }`}
-              onPointerDown={handleCanvasPointerDown}
-              onPointerMove={handleCanvasPointerMove}
-              onPointerUp={handleCanvasPointerUp}
-              onPointerCancel={handleCanvasPointerUp}
-              onPointerLeave={handleCanvasPointerLeave}
-            >
-              {placements.map((placement) => {
-                const refItem = itemMap.get(placement.itemId);
-                if (!refItem) return null;
-
-                return (
-                  <MoodboardCardFrame
-                    key={placement.itemId}
-                    placement={placement}
-                    item={refItem}
-                    isSelected={selectedId === placement.itemId}
-                    interactive={interactionMode === 'cursor'}
-                    onSelect={() => selectCard(placement.itemId)}
-                    onMoveStart={(e) => startMove(e, placement)}
-                    onResizeStart={(e, handle) => startResize(e, placement, handle)}
-                    onRotateStart={(e) => startRotate(e, placement)}
-                    onAspectRatioResolved={handleAspectResolved}
-                  />
-                );
-              })}
-
-              {placements.length === 0 && (
-                <div className="absolute inset-0 flex items-center justify-center text-zinc-500 text-sm pointer-events-none">
-                  Moodboard vide — glissez pour vous déplacer
-                </div>
+          <div ref={layerRef} className="relative flex-1 min-h-0 overflow-hidden flex flex-col">
+            <AnimatePresence>
+              {!contentReady && (
+                <motion.div
+                  key="moodboard-loading"
+                  initial={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className="absolute inset-0 z-[90] flex items-center justify-center bg-[#0a0a0b]"
+                  role="status"
+                  aria-label="Chargement du moodboard"
+                >
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="absolute top-4 right-4 md:top-5 md:right-8 p-2.5 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+                    title="Fermer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                  <CobeaLogoMark className="w-14 h-14 text-zinc-50 animate-spin" title="Chargement" />
+                </motion.div>
               )}
+            </AnimatePresence>
+
+            <div
+              className={`flex-1 min-h-0 flex flex-col transition-opacity duration-300 ${
+                contentReady ? 'opacity-100' : 'opacity-0'
+              }`}
+            >
+              <DetailDrawingLayer
+                itemId={moodboard.id}
+                drawingData={moodboard.drawingData}
+                onDrawingChange={onUpdateDrawing}
+                onInitialReady={() => setDrawingReady(true)}
+                toolboxAlwaysVisible
+                drawModeActive={interactionMode === 'draw'}
+                contentOffset={{ x: pan.x, y: pan.y, scale: zoom }}
+                onSetDrawMode={(active) => {
+                  setInteractionMode(active ? 'draw' : 'cursor');
+                  if (!active) setSelectedId(null);
+                }}
+                className="flex-1 min-h-0 overflow-hidden moodboard-canvas-bg"
+                style={{
+                  backgroundPosition: `${pan.x}px ${pan.y}px`,
+                  backgroundSize: `${DOT_GRID * zoom}px ${DOT_GRID * zoom}px`,
+                }}
+              >
+                <div
+                  ref={canvasRef}
+                  className={`relative w-full h-full z-[5] ${
+                    interactionMode === 'cursor'
+                      ? isPanning
+                        ? 'cursor-grabbing'
+                        : 'cursor-grab'
+                      : ''
+                  }`}
+                  onPointerDown={handleCanvasPointerDown}
+                  onPointerMove={handleCanvasPointerMove}
+                  onPointerUp={handleCanvasPointerUp}
+                  onPointerCancel={handleCanvasPointerUp}
+                  onPointerLeave={handleCanvasPointerLeave}
+                >
+                  {placements.map((placement) => {
+                    const refItem = itemMap.get(placement.itemId);
+                    if (!refItem) return null;
+
+                    return (
+                      <MoodboardCardFrame
+                        key={placement.itemId}
+                        placement={placement}
+                        item={refItem}
+                        isSelected={selectedId === placement.itemId}
+                        interactive={interactionMode === 'cursor'}
+                        onSelect={() => selectCard(placement.itemId)}
+                        onMoveStart={(e) => startMove(e, placement)}
+                        onResizeStart={(e, handle) => startResize(e, placement, handle)}
+                        onRotateStart={(e) => startRotate(e, placement)}
+                        onAspectRatioResolved={handleAspectResolved}
+                      />
+                    );
+                  })}
+
+                  {placements.length === 0 && (
+                    <div className="absolute inset-0 flex items-center justify-center text-zinc-500 text-sm pointer-events-none">
+                      Moodboard vide — glissez pour vous déplacer
+                    </div>
+                  )}
+                </div>
+              </DetailDrawingLayer>
             </div>
-          </DetailDrawingLayer>
           </div>
         </motion.div>
       </div>

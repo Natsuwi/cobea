@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { motion } from 'motion/react';
 import { Heart, Trash2, FileText, Tag as TagIcon } from 'lucide-react';
 import { ImageItem } from '../types';
@@ -48,7 +48,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
           className="cursor-grab active:cursor-grabbing p-5 md:p-6 space-y-3 min-h-[160px]"
         >
           <div className="flex items-center justify-between gap-2">
-            <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold tracking-wider uppercase text-amber-700/80 dark:text-amber-300/90 bg-amber-500/10 px-2.5 py-1 rounded-full">
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold tracking-wider uppercase text-accent-text bg-accent/10 px-2.5 py-1 rounded-full">
               <FileText className="w-3 h-3" />
               Note
             </span>
@@ -108,7 +108,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
       {preview && (
         <CardDragGhost preview={preview}>
           <div className="w-full h-full bg-white dark:bg-zinc-900 p-3.5 space-y-2 overflow-hidden">
-            <span className="inline-flex items-center gap-1 text-[9px] font-semibold tracking-wider uppercase text-amber-700/80 dark:text-amber-300/90 bg-amber-500/10 px-2 py-0.5 rounded-full">
+            <span className="inline-flex items-center gap-1 text-[9px] font-semibold tracking-wider uppercase text-accent-text bg-accent/10 px-2 py-0.5 rounded-full">
               <FileText className="w-2.5 h-2.5" />
               Note
             </span>

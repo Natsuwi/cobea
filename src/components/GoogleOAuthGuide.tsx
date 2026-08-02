@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { BookOpen, Check, ChevronDown, Copy, ExternalLink } from 'lucide-react';
 
 interface GoogleOAuthGuideProps {
@@ -27,7 +27,7 @@ export const GoogleOAuthGuide: React.FC<GoogleOAuthGuideProps> = ({ redirectUri 
           href="https://console.cloud.google.com/apis/credentials"
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400 underline underline-offset-2"
+          className="inline-flex items-center gap-1 text-accent-text underline underline-offset-2"
         >
           console.cloud.google.com/apis/credentials
           <ExternalLink className="w-3 h-3" />
@@ -112,7 +112,7 @@ export const GoogleOAuthGuide: React.FC<GoogleOAuthGuideProps> = ({ redirectUri 
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm font-medium text-zinc-800 dark:text-zinc-100 hover:bg-zinc-100/80 dark:hover:bg-white/5"
       >
-        <BookOpen className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+        <BookOpen className="w-4 h-4 text-accent-text shrink-0" />
         <span className="flex-1">Comment obtenir Client ID & Secret</span>
         <ChevronDown
           className={`w-4 h-4 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`}
@@ -123,7 +123,7 @@ export const GoogleOAuthGuide: React.FC<GoogleOAuthGuideProps> = ({ redirectUri 
         <ol className="px-3 pb-3 space-y-3 border-t border-zinc-200/80 dark:border-white/10 pt-3">
           {steps.map((step, i) => (
             <li key={step.title} className="flex gap-2.5 text-xs text-zinc-600 dark:text-zinc-300">
-              <span className="shrink-0 w-5 h-5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center text-[10px] font-semibold">
+              <span className="shrink-0 w-5 h-5 rounded-full bg-accent/15 text-accent-text flex items-center justify-center text-[10px] font-semibold">
                 {i + 1}
               </span>
               <div className="min-w-0 space-y-1 pt-0.5">

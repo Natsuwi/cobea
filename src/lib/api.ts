@@ -46,6 +46,7 @@ export function withAccessToken(url: string | undefined | null): string {
   if (!url) return '';
   if (url.startsWith('data:') || url.startsWith('blob:')) return url;
   if (!url.includes('/api/cards/')) return url;
+  if (/[?&]access_token=/.test(url)) return url;
   const token = getToken();
   if (!token) return url;
   const sep = url.includes('?') ? '&' : '?';
@@ -60,25 +61,38 @@ export function mapCard(raw: ImageItem & { url?: string; drawingData?: string })
   };
 }
 
+export function dataUrlToBlob(dataUrl: string): Blob {
+  const comma = dataUrl.indexOf(',');
+  if (comma < 0) throw new Error('Invalid data URL');
+  const header = dataUrl.slice(0, comma);
+  const base64 = dataUrl.slice(comma + 1);
+  const mime = /data:([^;]+)/.exec(header)?.[1] || 'image/png';
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
 async function request<T>(
   path: string,
   options: RequestInit & { json?: unknown; formData?: FormData } = {}
 ): Promise<T> {
-  const headers = new Headers(options.headers);
+  const { json, formData, ...fetchInit } = options;
+  const headers = new Headers(fetchInit.headers);
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
-  let body = options.body;
-  if (options.json !== undefined) {
+  let body = fetchInit.body;
+  if (json !== undefined) {
     headers.set('Content-Type', 'application/json');
-    body = JSON.stringify(options.json);
+    body = JSON.stringify(json);
   }
-  if (options.formData) {
-    body = options.formData;
+  if (formData) {
+    body = formData;
   }
 
   const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
+    ...fetchInit,
     headers,
     body,
   });
@@ -391,10 +405,39 @@ export const api = {
       aspectRatio: number;
     }>
   ) => {
+    // Large canvas PNGs: upload as multipart instead of JSON data-URL
+    if (data.drawingData !== undefined && Object.keys(data).length === 1) {
+      return api.updateCardDrawing(id, data.drawingData);
+    }
+
     const r = await request<{ card: ImageItem }>(`/api/cards/${id}`, {
       method: 'PATCH',
       json: data,
     });
+    return { card: mapCard(r.card) };
+  },
+
+  updateCardDrawing: async (id: string, drawingData: string | null) => {
+    if (drawingData === null) {
+      const r = await request<{ card: ImageItem }>(`/api/cards/${id}/drawing`, {
+        method: 'DELETE',
+      });
+      return { card: mapCard(r.card) };
+    }
+
+    if (drawingData.startsWith('data:')) {
+      const blob = dataUrlToBlob(drawingData);
+      const fd = new FormData();
+      fd.append('drawing', blob, 'drawing.png');
+      const r = await request<{ card: ImageItem }>(`/api/cards/${id}/drawing`, {
+        method: 'PUT',
+        formData: fd,
+      });
+      return { card: mapCard(r.card) };
+    }
+
+    // Already a remote URL — nothing to upload
+    const r = await request<{ card: ImageItem }>(`/api/cards/${id}`);
     return { card: mapCard(r.card) };
   },
 
@@ -461,14 +504,4 @@ function parseFilenameFromDisposition(header: string | null): string | null {
   }
   const plain = /filename="?([^";]+)"?/i.exec(header);
   return plain?.[1]?.trim() || null;
-}
-
-/** Convert a data URL to a Blob for multipart upload */
-export function dataUrlToBlob(dataUrl: string): Blob {
-  const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
-  if (!match) throw new Error('Invalid data URL');
-  const binary = atob(match[2]);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new Blob([bytes], { type: match[1] });
 }

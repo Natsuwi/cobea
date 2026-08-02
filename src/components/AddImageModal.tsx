@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Link, Upload, Image as ImageIcon, Sparkles, FileText } from 'lucide-react';
 import { NoteEditor } from './NoteEditor';
@@ -98,7 +98,7 @@ export const AddImageModal: React.FC<AddImageModalProps> = ({
           {/* Header */}
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-medium tracking-tight text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-500" />
+              <Sparkles className="w-4 h-4 text-accent" />
               <span>
                 {activeTab === 'note' ? 'Ajouter une note' : 'Ajouter une image'}
               </span>

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+﻿import React, { useCallback, useEffect, useState } from 'react';
 import { Check, ChevronRight, Folder, Loader2, X } from 'lucide-react';
 import { api, type DriveFolderRef } from '../lib/api';
 
@@ -146,7 +146,7 @@ export const DriveFolderPicker: React.FC<DriveFolderPickerProps> = ({
                     onClick={() => togglePick(folder)}
                     className={`shrink-0 w-5 h-5 rounded border flex items-center justify-center transition-colors ${
                       isSelected
-                        ? 'bg-amber-500 border-amber-500 text-white'
+                        ? 'bg-accent border-accent text-accent-fg'
                         : 'border-zinc-300 dark:border-zinc-600'
                     }`}
                     aria-pressed={isSelected}
@@ -159,7 +159,7 @@ export const DriveFolderPicker: React.FC<DriveFolderPickerProps> = ({
                     onClick={() => enter(folder)}
                     className="flex-1 flex items-center gap-2 min-w-0 text-left"
                   >
-                    <Folder className="w-4 h-4 text-amber-500 shrink-0" />
+                    <Folder className="w-4 h-4 text-accent shrink-0" />
                     <span className="text-sm text-zinc-800 dark:text-zinc-100 truncate">
                       {folder.name}
                     </span>
@@ -189,7 +189,7 @@ export const DriveFolderPicker: React.FC<DriveFolderPickerProps> = ({
             type="button"
             disabled={mode === 'upload' ? picked.size === 0 : false}
             onClick={() => onConfirm([...picked.values()])}
-            className="px-3 py-2 rounded-xl text-sm font-medium bg-zinc-900 dark:bg-amber-500 text-white dark:text-zinc-950 disabled:opacity-40"
+            className="px-3 py-2 rounded-xl text-sm font-medium bg-accent text-accent-fg disabled:opacity-40"
           >
             Confirmer
           </button>

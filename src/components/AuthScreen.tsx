@@ -1,16 +1,29 @@
-import React, { useState } from 'react';
-import { api, setToken } from '../lib/api';
+﻿import React, { useState } from 'react';
+import { api, setToken, type AuthUser } from '../lib/api';
 import type { UserProfile } from '../types';
 import { CobeaBrand } from './CobeaBrand';
 import { ACCOUNT_SWITCHER_BG } from '../data/profiles';
 
 type Mode = 'login' | 'register';
 
+export type AuthSuccess = {
+  token: string;
+  user: AuthUser;
+  profile: UserProfile;
+};
+
 interface AuthScreenProps {
-  onAuthenticated: (profile: UserProfile) => void;
+  onAuthenticated: (result: AuthSuccess) => void;
+  /** When adding another account while already logged in */
+  addingAccount?: boolean;
+  onCancel?: () => void;
 }
 
-export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
+export const AuthScreen: React.FC<AuthScreenProps> = ({
+  onAuthenticated,
+  addingAccount = false,
+  onCancel,
+}) => {
   const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -28,7 +41,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
           ? await api.login(email.trim(), password)
           : await api.register(email.trim(), password, name.trim() || undefined);
       setToken(result.token);
-      onAuthenticated(result.profile);
+      onAuthenticated({
+        token: result.token,
+        user: result.user,
+        profile: result.profile,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur');
     } finally {
@@ -43,7 +60,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
         style={{ backgroundImage: `url('${ACCOUNT_SWITCHER_BG}')` }}
         aria-hidden
       />
-      <div className="absolute inset-0 bg-gradient-to-b from-zinc-50/90 via-zinc-100/85 to-amber-50/80 dark:from-zinc-950/95 dark:via-zinc-900/90 dark:to-zinc-950/95" />
+      <div className="absolute inset-0 bg-gradient-to-b from-zinc-50/90 via-zinc-100/85 to-accent-soft dark:from-zinc-950/95 dark:via-zinc-900/90 dark:to-zinc-950/95" />
 
       <div className="relative z-10 w-full max-w-md">
         <div className="flex items-center justify-center mb-8">
@@ -59,10 +76,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
         >
           <div className="text-center space-y-1 mb-2">
             <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-              {mode === 'login' ? 'Connexion' : 'Créer un compte'}
+              {addingAccount
+                ? mode === 'login'
+                  ? 'Ajouter un compte'
+                  : 'Créer un autre compte'
+                : mode === 'login'
+                  ? 'Connexion'
+                  : 'Créer un compte'}
             </h1>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              Un compte = un espace personnel
+              {addingAccount
+                ? 'Les comptes déjà connectés restent disponibles'
+                : 'Un compte = un espace personnel'}
             </p>
           </div>
 
@@ -73,7 +98,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-950 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-400/50"
+                className="w-full rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-950 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/50"
                 placeholder="Aria"
                 autoComplete="nickname"
               />
@@ -87,7 +112,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-950 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-400/50"
+              className="w-full rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-950 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/50"
               placeholder="toi@example.com"
               autoComplete="email"
             />
@@ -103,7 +128,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
               minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-950 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-400/50"
+              className="w-full rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-950 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/50"
               placeholder="••••••••"
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             />
@@ -118,10 +143,26 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-zinc-900 dark:bg-amber-500 text-white dark:text-zinc-950 font-medium py-2.5 text-sm hover:opacity-90 disabled:opacity-50 transition"
+            className="w-full rounded-xl bg-accent text-accent-fg font-medium py-2.5 text-sm hover:opacity-90 disabled:opacity-50 transition"
           >
-            {loading ? '…' : mode === 'login' ? 'Se connecter' : "S'inscrire"}
+            {loading
+              ? '…'
+              : mode === 'login'
+                ? addingAccount
+                  ? 'Connecter ce compte'
+                  : 'Se connecter'
+                : "S'inscrire"}
           </button>
+
+          {addingAccount && onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="w-full rounded-xl border border-black/10 dark:border-white/10 py-2.5 text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
+            >
+              Annuler
+            </button>
+          )}
 
           <p className="text-center text-sm text-zinc-500">
             {mode === 'login' ? (
@@ -129,7 +170,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
                 Pas encore de compte ?{' '}
                 <button
                   type="button"
-                  className="text-amber-700 dark:text-amber-400 font-medium"
+                  className="text-accent-text font-medium"
                   onClick={() => {
                     setMode('register');
                     setError(null);
@@ -143,7 +184,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
                 Déjà un compte ?{' '}
                 <button
                   type="button"
-                  className="text-amber-700 dark:text-amber-400 font-medium"
+                  className="text-accent-text font-medium"
                   onClick={() => {
                     setMode('login');
                     setError(null);

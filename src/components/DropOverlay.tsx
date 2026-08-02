@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Upload, Image as ImageIcon, Sparkles } from 'lucide-react';
 
@@ -26,7 +26,7 @@ export const DropOverlay: React.FC<DropOverlayProps> = ({ isDragging }) => {
               >
                 <Upload className="w-9 h-9 stroke-[1.5]" />
               </motion.div>
-              <div className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-amber-400 text-zinc-950 flex items-center justify-center shadow-md">
+              <div className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-accent text-accent-fg flex items-center justify-center shadow-md">
                 <Sparkles className="w-4 h-4 fill-current" />
               </div>
             </div>

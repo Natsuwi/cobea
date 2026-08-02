@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Pencil, Eye, EyeOff, Trash2, Undo2, Redo2 } from 'lucide-react';
 import { ColorWheelPicker, COLOR_SLOT_COUNT } from './ColorWheelPicker';
+import { getAccentHex } from '../../lib/accent';
 
 const BRUSH_IMG = '/drawing_tool/Pinceau.png';
 const ERASER_IMG = '/drawing_tool/Gomme.png';
@@ -28,6 +29,8 @@ interface DetailDrawingLayerProps {
   /** Pan/zoom for content + drawing canvas (moodboard navigation) */
   contentOffset?: { x: number; y: number; scale?: number };
   style?: React.CSSProperties;
+  /** Fires once after the initial drawing bitmap is painted (or skipped). */
+  onInitialReady?: () => void;
 }
 
 export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
@@ -41,9 +44,13 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
   onSetDrawMode,
   contentOffset,
   style,
+  onInitialReady,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const onInitialReadyRef = useRef(onInitialReady);
+  onInitialReadyRef.current = onInitialReady;
+  const initialReadySentRef = useRef(false);
   const colorBtnRef = useRef<HTMLButtonElement>(null);
   const sizeBtnRef = useRef<HTMLButtonElement>(null);
   const sizePanelRef = useRef<HTMLDivElement>(null);
@@ -52,7 +59,7 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
   const [isDrawingVisible, setIsDrawingVisible] = useState(true);
   const [tool, setTool] = useState<DrawTool>('brush');
   const [brushSize, setBrushSize] = useState<number>(10);
-  const [color, setColor] = useState('#f59e0b');
+  const [color, setColor] = useState(() => getAccentHex());
   const [colorSlots, setColorSlots] = useState<(string | null)[]>(() =>
     Array.from({ length: COLOR_SLOT_COUNT }, () => null)
   );
@@ -91,6 +98,11 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
     ctx.imageSmoothingQuality = 'high';
   }, []);
 
+  const getCtx = useCallback((canvas: HTMLCanvasElement | null) => {
+    if (!canvas) return null;
+    return canvas.getContext('2d', { willReadFrequently: true });
+  }, []);
+
   const syncHistoryButtons = useCallback(() => {
     setCanUndo(undoStackRef.current.length > 0);
     setCanRedo(redoStackRef.current.length > 0);
@@ -117,7 +129,7 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
       if (!container || !canvas) return;
 
       const { width, height } = container.getBoundingClientRect();
-      const ctx = canvas.getContext('2d');
+      const ctx = getCtx(canvas);
       if (!ctx) return;
 
       const dpr = window.devicePixelRatio || 1;
@@ -133,12 +145,18 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
 
       const img = new Image();
       if (data.startsWith('http://') || data.startsWith('https://')) {
-        img.crossOrigin = 'anonymous';
+        try {
+          if (new URL(data, window.location.href).origin !== window.location.origin) {
+            img.crossOrigin = 'anonymous';
+          }
+        } catch {
+          /* ignore */
+        }
       }
       img.onload = () => {
         if (activeItemRef.current !== itemId) return;
         const c = canvasRef.current;
-        const cx = c?.getContext('2d');
+        const cx = getCtx(c);
         if (!cx || !c) return;
         setupContext(cx, dpr);
         cx.clearRect(0, 0, width, height);
@@ -147,9 +165,12 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
         setHasDrawing(!isCanvasEmpty(c));
         onDrawingChange(itemId, data);
       };
+      img.onerror = () => {
+        console.warn('[drawing] failed to load snapshot');
+      };
       img.src = data;
     },
-    [itemId, onDrawingChange, setupContext]
+    [itemId, onDrawingChange, setupContext, getCtx]
   );
 
   const pushUndoSnapshot = useCallback(() => {
@@ -188,13 +209,25 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
     syncHistoryButtons();
   }, [captureSnapshot, restoreSnapshot, syncHistoryButtons]);
 
+  const signalInitialReady = useCallback(() => {
+    if (initialReadySentRef.current) return;
+    initialReadySentRef.current = true;
+    onInitialReadyRef.current?.();
+  }, []);
+
   const paintImageOntoCanvas = useCallback(
     (data: string | null | undefined, width: number, height: number) => {
       const canvas = canvasRef.current;
-      if (!canvas) return;
+      if (!canvas) {
+        signalInitialReady();
+        return;
+      }
 
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+      const ctx = getCtx(canvas);
+      if (!ctx) {
+        signalInitialReady();
+        return;
+      }
 
       const dpr = window.devicePixelRatio || 1;
       setupContext(ctx, dpr);
@@ -202,26 +235,41 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
 
       if (!data) {
         setHasDrawing(false);
+        signalInitialReady();
         return;
       }
 
       const img = new Image();
       if (data.startsWith('http://') || data.startsWith('https://')) {
-        img.crossOrigin = 'anonymous';
+        try {
+          if (new URL(data, window.location.href).origin !== window.location.origin) {
+            img.crossOrigin = 'anonymous';
+          }
+        } catch {
+          /* ignore */
+        }
       }
       img.onload = () => {
         if (activeItemRef.current !== itemId) return;
         const c = canvasRef.current;
-        const cx = c?.getContext('2d');
-        if (!cx || !c) return;
+        const cx = getCtx(c);
+        if (!cx || !c) {
+          signalInitialReady();
+          return;
+        }
         setupContext(cx, dpr);
         cx.clearRect(0, 0, width, height);
         cx.drawImage(img, 0, 0, width, height);
         setHasDrawing(!isCanvasEmpty(c));
+        signalInitialReady();
+      };
+      img.onerror = () => {
+        console.warn('[drawing] failed to load drawing layer');
+        signalInitialReady();
       };
       img.src = data;
     },
-    [itemId, setupContext]
+    [itemId, setupContext, getCtx, signalInitialReady]
   );
 
   const syncCanvasSize = useCallback(
@@ -240,6 +288,7 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
 
       const dpr = window.devicePixelRatio || 1;
       let snapshot: string | null = null;
+      const wasUnsized = prev.width === 0 || prev.height === 0;
 
       if (preserve && canvas.width > 0 && canvas.height > 0) {
         snapshot = canvas.toDataURL();
@@ -251,36 +300,44 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
       canvas.style.height = `${height}px`;
       sizeRef.current = { width, height };
 
-      const ctx = canvas.getContext('2d');
+      const ctx = getCtx(canvas);
       if (!ctx) return;
       setupContext(ctx, dpr);
 
       if (snapshot && snapshot !== 'data:,') {
         const img = new Image();
         if (snapshot.startsWith('http://') || snapshot.startsWith('https://')) {
-          img.crossOrigin = 'anonymous';
+          try {
+            if (new URL(snapshot, window.location.href).origin !== window.location.origin) {
+              img.crossOrigin = 'anonymous';
+            }
+          } catch {
+            /* ignore */
+          }
         }
         img.onload = () => {
           if (activeItemRef.current !== itemId) return;
           const c = canvasRef.current;
-          const cx = c?.getContext('2d');
+          const cx = getCtx(c);
           if (!cx) return;
           setupContext(cx, dpr);
           cx.clearRect(0, 0, width, height);
           cx.drawImage(img, 0, 0, width, height);
         };
         img.src = snapshot;
-      } else if (!preserve) {
+      } else if (!preserve || wasUnsized) {
+        // First layout after mount often hits ResizeObserver with preserve=true
         paintImageOntoCanvas(lastExportedRef.current, width, height);
       }
     },
-    [itemId, paintImageOntoCanvas, setupContext]
+    [itemId, paintImageOntoCanvas, setupContext, getCtx]
   );
 
   // Init / switch item — load drawing once, never reload on save echo
   useEffect(() => {
     activeItemRef.current = itemId;
     lastExportedRef.current = drawingData ?? null;
+    initialReadySentRef.current = false;
     setHasDrawing(!!drawingData);
     setIsDrawingMode(false);
     setShowColorPicker(false);
@@ -321,6 +378,18 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
   useEffect(() => {
     if (!isDrawingMode && !toolboxAlwaysVisible) setCursorPos(null);
   }, [isDrawingMode, toolboxAlwaysVisible]);
+
+  // Keep brush default in sync with the selected accent preference
+  useEffect(() => {
+    const syncFromAccent = () => setColor(getAccentHex());
+    syncFromAccent();
+    const mo = new MutationObserver(syncFromAccent);
+    mo.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-accent'],
+    });
+    return () => mo.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!showSizePicker) return;
@@ -368,29 +437,78 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [toolboxAlwaysVisible, drawModeActive, isDrawingMode, handleUndo, handleRedo]);
 
+  const exportCanvasPng = useCallback((): string | null => {
+    const canvas = canvasRef.current;
+    if (!canvas || activeItemRef.current !== itemId) return null;
+    if (canvas.width === 0 || canvas.height === 0) return null;
+    // Never treat a blank bitmap as "delete" — resize/reload briefly clears
+    // the canvas and used to fire onDrawingChange(null), wiping the DB drawing.
+    try {
+      if (isCanvasEmpty(canvas)) return null;
+      return canvas.toDataURL('image/png');
+    } catch (err) {
+      console.warn('[drawing] export failed', err);
+      return null;
+    }
+  }, [itemId]);
+
   const scheduleSave = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      const canvas = canvasRef.current;
-      if (!canvas || activeItemRef.current !== itemId) return;
-
-      if (isCanvasEmpty(canvas)) {
-        if (lastExportedRef.current !== null) {
-          lastExportedRef.current = null;
-          setHasDrawing(false);
-          onDrawingChange(itemId, null);
-        }
-        return;
-      }
-
-      const data = canvas.toDataURL('image/png');
-      if (data === lastExportedRef.current) return;
-
+      const data = exportCanvasPng();
+      if (!data || data === lastExportedRef.current) return;
       lastExportedRef.current = data;
       setHasDrawing(true);
       onDrawingChange(itemId, data);
-    }, 500);
-  }, [itemId, onDrawingChange]);
+    }, toolboxAlwaysVisible ? 200 : 500);
+  }, [itemId, onDrawingChange, toolboxAlwaysVisible, exportCanvasPng]);
+
+  /** Flush pending strokes immediately (close modal / leave draw mode). */
+  const flushSave = useCallback(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const data = exportCanvasPng();
+    if (!data || data === lastExportedRef.current) return;
+    lastExportedRef.current = data;
+    setHasDrawing(true);
+    onDrawingChange(itemId, data);
+  }, [itemId, onDrawingChange, exportCanvasPng]);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      try {
+        const canvas = canvasRef.current;
+        if (!canvas || canvas.width === 0 || canvas.height === 0) return;
+        if (isCanvasEmpty(canvas)) return;
+        const data = canvas.toDataURL('image/png');
+        if (data && data !== lastExportedRef.current) {
+          lastExportedRef.current = data;
+          onDrawingChange(itemId, data);
+        }
+      } catch {
+        /* ignore tainted / detached canvas */
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- flush once on unmount for this item
+  }, [itemId]);
+
+  const wasDrawModeRef = useRef(drawModeActive);
+  useEffect(() => {
+    if (!toolboxAlwaysVisible) {
+      wasDrawModeRef.current = drawModeActive;
+      return;
+    }
+    if (wasDrawModeRef.current && !drawModeActive) {
+      flushSave();
+    }
+    wasDrawModeRef.current = drawModeActive;
+  }, [toolboxAlwaysVisible, drawModeActive, flushSave]);
 
   const getPoint = (e: React.PointerEvent<HTMLCanvasElement> | PointerEvent) => {
     const canvas = canvasRef.current!;
@@ -422,7 +540,7 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
     control: { x: number; y: number },
     to: { x: number; y: number }
   ) => {
-    const ctx = canvasRef.current?.getContext('2d');
+    const ctx = getCtx(canvasRef.current);
     if (!ctx) return;
 
     applyBrushStyle(ctx);
@@ -436,7 +554,7 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
     from: { x: number; y: number },
     to: { x: number; y: number }
   ) => {
-    const ctx = canvasRef.current?.getContext('2d');
+    const ctx = getCtx(canvasRef.current);
     if (!ctx) return;
 
     applyBrushStyle(ctx);
@@ -524,7 +642,7 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
     lastPointRef.current = pt;
     lastMidRef.current = pt;
 
-    const ctx = canvasRef.current?.getContext('2d');
+    const ctx = getCtx(canvasRef.current);
     if (!ctx) return;
     applyBrushStyle(ctx);
     ctx.beginPath();
@@ -574,7 +692,8 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
     drawingRef.current = false;
     lastPointRef.current = null;
     lastMidRef.current = null;
-    scheduleSave();
+    if (toolboxAlwaysVisible) flushSave();
+    else scheduleSave();
   };
 
   const handleColorChange = (c: string) => {
@@ -599,7 +718,7 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
     pushUndoSnapshot();
 
     const { width, height } = container.getBoundingClientRect();
-    const ctx = canvas.getContext('2d');
+    const ctx = getCtx(canvas);
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
@@ -622,11 +741,16 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
             : undefined
         }
       >
-        {children}
+        {/* Full-size wrapper so absolute card % positions keep working */}
+        <div
+          className={`absolute inset-0 ${canDraw ? 'pointer-events-none' : ''}`}
+        >
+          {children}
+        </div>
 
         <canvas
           ref={canvasRef}
-          className={`absolute inset-0 z-10 touch-none ${
+          className={`absolute inset-0 z-[1000] touch-none ${
             canvasVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
           } ${canDraw ? 'cursor-none' : 'pointer-events-none'}`}
           onPointerDown={handlePointerDown}
@@ -638,7 +762,7 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
 
         {canDraw && cursorPos && (
           <div
-            className="pointer-events-none absolute z-[15] rounded-full border-2 box-border"
+            className="pointer-events-none absolute z-[1001] rounded-full border-2 box-border"
             style={{
               left: cursorPos.x,
               top: cursorPos.y,
@@ -660,7 +784,7 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
           onClick={() => setIsDrawingMode((v) => !v)}
           className={`absolute bottom-4 left-4 z-20 w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all duration-200 ${
             isDrawingMode
-              ? 'bg-amber-500 text-white scale-105'
+              ? 'bg-accent text-accent-fg scale-105'
               : 'bg-white/90 dark:bg-zinc-800/90 text-zinc-700 dark:text-zinc-200 hover:scale-105 border border-black/5 dark:border-white/10 backdrop-blur-md'
           }`}
           title={isDrawingMode ? 'Quitter le mode dessin' : 'Dessiner sur la carte'}
@@ -860,7 +984,7 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
 };
 
 function isCanvasEmpty(canvas: HTMLCanvasElement): boolean {
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return true;
   const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
   for (let i = 3; i < data.length; i += 4) {

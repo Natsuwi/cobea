@@ -21,12 +21,26 @@ import { AddImageModal } from './components/AddImageModal';
 import { ZenHeader } from './components/ZenHeader';
 import { ProfileAvatarButton } from './components/ProfileAvatarButton';
 import { AccountPanel } from './components/AccountPanel';
-import { AuthScreen } from './components/AuthScreen';
+import { AccountSwitcher } from './components/AccountSwitcher';
+import { AuthScreen, type AuthSuccess } from './components/AuthScreen';
 import { UpdateBanner } from './components/UpdateBanner';
 import { CobeaLogoMark } from './components/CobeaBrand';
 import { ITEM_DRAG_MIME } from './hooks/useCardDragPreview';
 import { placementSizeFromAspect, getItemAspectRatio } from './components/MoodboardCardFrame';
 import { api, dataUrlToBlob, getToken, setToken, type DriveFolderRef, type StorageState } from './lib/api';
+import {
+  listSavedAccounts,
+  removeSavedAccount,
+  switchToSavedAccount,
+  upsertSavedAccount,
+  type SavedAccount,
+} from './lib/accounts';
+import {
+  ACCENT_KEY,
+  applyAccentToDocument,
+  parseAccentId,
+  type AccentId,
+} from './lib/accent';
 import { useAppUpdate } from './hooks/useAppUpdate';
 
 const THEME_KEY = 'zen_gallery_theme_v1';
@@ -81,8 +95,17 @@ export default function App() {
     const saved = localStorage.getItem(THEME_KEY);
     return (saved as ThemeMode) || 'light';
   });
+  const [accent, setAccent] = useState<AccentId>(() => {
+    const id = parseAccentId(localStorage.getItem(ACCENT_KEY));
+    applyAccentToDocument(id);
+    return id;
+  });
 
   const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
+  const [isAddingAccount, setIsAddingAccount] = useState(false);
+  const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>(() => listSavedAccounts());
+  const [activeUserId, setActiveUserId] = useState<string | null>(null);
   const [images, setImages] = useState<ImageItem[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
 
@@ -201,6 +224,50 @@ export default function App() {
     }
   }, [refreshGallery, storageSetters]);
 
+  const resetSessionUi = useCallback(() => {
+    setImages([]);
+    setFolders([]);
+    setSelectedImageId(null);
+    setSelectedFolderId(null);
+    setSelectionDockIds([]);
+    setSearchQuery('');
+    setActiveTagFilters([]);
+    setIsFavoriteFilterActive(false);
+    setIsAccountOpen(false);
+    setIsSwitcherOpen(false);
+    setIsAddModalOpen(false);
+    setLoadError(null);
+  }, []);
+
+  const loadActiveSession = useCallback(async () => {
+    const [me, cardsRes, foldersRes] = await Promise.all([
+      api.me(),
+      api.listCards(),
+      api.listFolders(),
+    ]);
+    const token = getToken();
+    if (token) {
+      setSavedAccounts(
+        upsertSavedAccount({
+          userId: me.user.id,
+          email: me.user.email,
+          token,
+          profile: me.profile,
+        })
+      );
+    }
+    setActiveUserId(me.user.id);
+    setProfile(me.profile);
+    applyMeStorage(me, storageSetters);
+    if (me.profile.theme === 'light' || me.profile.theme === 'dark') {
+      setTheme(me.profile.theme);
+    }
+    setImages(cardsRes.cards);
+    setFolders(foldersRes.folders);
+    setAuthed(true);
+    void maybeBackgroundSync();
+  }, [maybeBackgroundSync, storageSetters]);
+
   const bootstrap = useCallback(async () => {
     setBootstrapping(true);
     setLoadError(null);
@@ -213,32 +280,23 @@ export default function App() {
         return;
       }
 
-      // Parallel: config + session + gallery
-      const [config, me, cardsRes, foldersRes] = await Promise.all([
-        api.config(),
-        api.me(),
-        api.listCards(),
-        api.listFolders(),
-      ]);
+      const config = await api.config();
       setGoogleConfigured(config.googleConfigured);
-      setProfile(me.profile);
-      applyMeStorage(me, storageSetters);
-      if (me.profile.theme === 'light' || me.profile.theme === 'dark') {
-        setTheme(me.profile.theme);
-      }
-      setImages(cardsRes.cards);
-      setFolders(foldersRes.folders);
-      setAuthed(true);
-      // Show UI immediately; sync Drive in background only if idle > 6h
-      void maybeBackgroundSync();
+      await loadActiveSession();
     } catch {
+      const failed = getToken();
+      if (failed) {
+        const doomed = listSavedAccounts().find((a) => a.token === failed);
+        if (doomed) setSavedAccounts(removeSavedAccount(doomed.userId));
+      }
       setToken(null);
       setAuthed(false);
       setProfile(null);
+      setActiveUserId(null);
     } finally {
       setBootstrapping(false);
     }
-  }, [maybeBackgroundSync, storageSetters]);
+  }, [loadActiveSession]);
 
   useEffect(() => {
     if (bootstrapStarted) return;
@@ -282,6 +340,11 @@ export default function App() {
       void api.updateProfile({ theme }).catch(() => undefined);
     }
   }, [theme, authed]);
+
+  useEffect(() => {
+    applyAccentToDocument(accent);
+    localStorage.setItem(ACCENT_KEY, accent);
+  }, [accent]);
 
   useEffect(() => {
     localStorage.setItem(COLUMNS_KEY, String(columnCount));
@@ -376,8 +439,15 @@ export default function App() {
     setImages((prev) => {
       const idx = prev.findIndex((c) => c.id === card.id);
       if (idx === -1) return [card, ...prev];
+      const previous = prev[idx];
       const next = [...prev];
-      next[idx] = card;
+      // Placement/title updates can return before a drawing save commits —
+      // never drop a drawing the client already has.
+      const merged: ImageItem = { ...previous, ...card };
+      if (!card.drawingData && previous.drawingData) {
+        merged.drawingData = previous.drawingData;
+      }
+      next[idx] = merged;
       return next;
     });
   }, []);
@@ -526,27 +596,52 @@ export default function App() {
     [upsertCard]
   );
 
-  const handleUpdateDrawing = useCallback(
-    async (id: string, drawingData: string | null) => {
-      setImages((prev) =>
-        prev.map((item) => {
-          if (item.id !== id) return item;
-          if (!drawingData) {
-            const { drawingData: _removed, ...rest } = item;
-            return rest;
-          }
-          return { ...item, drawingData };
-        })
-      );
-      try {
-        const { card } = await api.updateCard(id, { drawingData });
-        upsertCard(card);
-      } catch (err) {
-        console.error(err);
-      }
-    },
-    [upsertCard]
-  );
+  const drawingSaveChainRef = useRef<Promise<void>>(Promise.resolve());
+
+  const handleUpdateDrawing = useCallback((id: string, drawingData: string | null) => {
+    setImages((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        if (!drawingData) {
+          const { drawingData: _removed, ...rest } = item;
+          return rest;
+        }
+        return { ...item, drawingData };
+      })
+    );
+
+    drawingSaveChainRef.current = drawingSaveChainRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        try {
+          const { card } = await api.updateCardDrawing(id, drawingData);
+          setImages((prev) =>
+            prev.map((item) => {
+              if (item.id !== id) return item;
+              // A newer local stroke may have landed while this upload ran.
+              if (
+                drawingData &&
+                drawingData.startsWith('data:') &&
+                item.drawingData?.startsWith('data:') &&
+                item.drawingData !== drawingData
+              ) {
+                return { ...item, ...card, drawingData: item.drawingData };
+              }
+              return {
+                ...item,
+                ...card,
+                drawingData: card.drawingData ?? item.drawingData,
+              };
+            })
+          );
+        } catch (err) {
+          console.error('Drawing save failed', err);
+          setLoadError(
+            err instanceof Error ? err.message : 'Échec de la sauvegarde du dessin'
+          );
+        }
+      });
+  }, []);
 
   const handleCreateFolder = useCallback(async (name: string, icon: string) => {
     const { folder } = await api.createFolder(name, icon);
@@ -774,30 +869,94 @@ export default function App() {
     selectedItem && isMoodboardItem(selectedItem) ? selectedItem : null;
 
   const handleLogout = () => {
+    const currentId = activeUserId;
+    void api.logout().catch(() => undefined);
+
+    if (currentId) {
+      const remaining = removeSavedAccount(currentId);
+      setSavedAccounts(remaining);
+      if (remaining.length > 0) {
+        const next = remaining[remaining.length - 1];
+        switchToSavedAccount(next.userId);
+        resetSessionUi();
+        setBootstrapping(true);
+        void loadActiveSession()
+          .catch(() => {
+            setToken(null);
+            setAuthed(false);
+            setProfile(null);
+            setActiveUserId(null);
+          })
+          .finally(() => setBootstrapping(false));
+        return;
+      }
+    }
+
     setToken(null);
     setAuthed(false);
     setProfile(null);
+    setActiveUserId(null);
     setImages([]);
     setFolders([]);
     setIsAccountOpen(false);
-    void api.logout().catch(() => undefined);
+    setIsSwitcherOpen(false);
   };
 
-  const handleAuthenticated = async (p: UserProfile) => {
-    setProfile(p);
+  const handleAuthenticated = async (result: AuthSuccess) => {
+    setSavedAccounts(
+      upsertSavedAccount({
+        userId: result.user.id,
+        email: result.user.email,
+        token: result.token,
+        profile: result.profile,
+      })
+    );
+    setActiveUserId(result.user.id);
+    setProfile(result.profile);
     setAuthed(true);
+    setIsAddingAccount(false);
+    resetSessionUi();
     try {
-      const [me, cardsRes, foldersRes] = await Promise.all([
-        api.me(),
-        api.listCards(),
-        api.listFolders(),
-      ]);
-      applyMeStorage(me, storageSetters);
-      setImages(cardsRes.cards);
-      setFolders(foldersRes.folders);
-      void maybeBackgroundSync();
+      await loadActiveSession();
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Load failed');
+    }
+  };
+
+  const handleSelectAccount = async (userId: string) => {
+    if (userId === activeUserId) {
+      setIsSwitcherOpen(false);
+      return;
+    }
+    const account = switchToSavedAccount(userId);
+    if (!account) return;
+    setIsSwitcherOpen(false);
+    resetSessionUi();
+    setBootstrapping(true);
+    try {
+      await loadActiveSession();
+    } catch {
+      setSavedAccounts(removeSavedAccount(userId));
+      setLoadError('Session expirée pour ce compte — reconnecte-toi.');
+      const remaining = listSavedAccounts();
+      if (remaining.length > 0) {
+        switchToSavedAccount(remaining[remaining.length - 1].userId);
+        try {
+          await loadActiveSession();
+        } catch {
+          setToken(null);
+          setAuthed(false);
+          setProfile(null);
+          setActiveUserId(null);
+        }
+      } else {
+        setToken(null);
+        setAuthed(false);
+        setProfile(null);
+        setActiveUserId(null);
+      }
+    } finally {
+      setBootstrapping(false);
     }
   };
 
@@ -829,18 +988,34 @@ export default function App() {
     );
   }
 
+  if (isAddingAccount) {
+    return (
+      <>
+        {updateBanner}
+        <AuthScreen
+          addingAccount
+          onAuthenticated={(result) => void handleAuthenticated(result)}
+          onCancel={() => {
+            setIsAddingAccount(false);
+            setIsSwitcherOpen(true);
+          }}
+        />
+      </>
+    );
+  }
+
   if (!authed || !profile) {
     return (
       <>
         {updateBanner}
-        <AuthScreen onAuthenticated={handleAuthenticated} />
+        <AuthScreen onAuthenticated={(result) => void handleAuthenticated(result)} />
       </>
     );
   }
 
   return (
     <div
-      className={`min-h-screen selection:bg-amber-400 selection:text-zinc-950 transition-[padding] duration-300 ${
+      className={`min-h-screen selection:bg-accent selection:text-accent-fg transition-[padding] duration-300 ${
         showSelectionDock ? 'pb-0' : 'pb-28'
       }`}
     >
@@ -856,9 +1031,28 @@ export default function App() {
         </div>
       )}
 
-      {!isAccountOpen && (
-        <ProfileAvatarButton profile={profile} onClick={() => setIsAccountOpen(true)} />
+      {!isAccountOpen && !isSwitcherOpen && !zenMode && (
+        <ProfileAvatarButton
+          profile={profile}
+          onClick={() => setIsAccountOpen(true)}
+          onSwitchAccounts={() => setIsSwitcherOpen(true)}
+        />
       )}
+
+      <AnimatePresence>
+        {isSwitcherOpen && (
+          <AccountSwitcher
+            accounts={savedAccounts}
+            activeUserId={activeUserId}
+            onSelectAccount={(id) => void handleSelectAccount(id)}
+            onAddAccount={() => {
+              setIsSwitcherOpen(false);
+              setIsAddingAccount(true);
+            }}
+            onClose={() => setIsSwitcherOpen(false)}
+          />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isAccountOpen && (
@@ -866,6 +1060,8 @@ export default function App() {
             profile={profile}
             theme={theme}
             onThemeChange={setTheme}
+            accent={accent}
+            onAccentChange={setAccent}
             columnCount={columnCount}
             onColumnCountChange={setColumnCount}
             googleConnected={googleConnected}
@@ -952,7 +1148,9 @@ export default function App() {
         onToggleZenMode={() => void handleToggleZenMode()}
         totalImagesCount={filteredImages.length}
         hiddenForSelection={showSelectionDock}
-        typeToSearchEnabled={!selectedImageId && !isAddModalOpen && !isAccountOpen}
+        typeToSearchEnabled={
+          !selectedImageId && !isAddModalOpen && !isAccountOpen && !isSwitcherOpen
+        }
       />
 
       <ImageModal

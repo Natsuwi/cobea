@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { motion } from 'motion/react';
 import { Sparkles, Heart, Plus } from 'lucide-react';
 import { Folder } from '../types';
@@ -106,7 +106,7 @@ export const ZenHeader: React.FC<ZenHeaderProps> = ({
           transition={{ duration: 0.5, delay: 0.1 }}
           className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium bg-white/80 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-300 border border-black/5 dark:border-white/10 shadow-sm"
         >
-          <Sparkles className="w-3 h-3 text-amber-500 fill-amber-500/20" />
+          <Sparkles className="w-3 h-3 text-accent fill-accent/20" />
           <span>Glissez n'importe quelle image pour commencer</span>
         </motion.div>
 

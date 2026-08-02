@@ -18,10 +18,14 @@ export type CardFileSummary = {
 
 export type CardForList = Card & { file: CardFileSummary | null };
 
-function mediaUrl(cardId: string, kind: 'file' | 'thumb' | 'drawing'): string {
+function mediaUrl(cardId: string, kind: 'file' | 'thumb' | 'drawing', version?: number): string {
   const base = env.PUBLIC_API_URL.replace(/\/$/, '');
   const path = `/api/cards/${cardId}/${kind}`;
-  return base ? `${base}${path}` : path;
+  const url = base ? `${base}${path}` : path;
+  if (kind === 'drawing' && version) {
+    return `${url}?v=${version}`;
+  }
+  return url;
 }
 
 function buildCardPayload(
@@ -75,7 +79,9 @@ function buildCardPayload(
     markdown,
     additionalNotes,
     folderId: card.folderId,
-    drawingData: file?.hasDrawing ? mediaUrl(card.id, 'drawing') : undefined,
+    drawingData: file?.hasDrawing
+      ? mediaUrl(card.id, 'drawing', card.updatedAt.getTime())
+      : undefined,
     moodboardPlacements: card.moodboardPlacements ?? undefined,
     hasFile: Boolean(file?.hasData || file?.driveFileId),
     hasLocalFile: Boolean(file?.hasData),
@@ -138,9 +144,9 @@ export async function listSerializedCards(profileId: string) {
     const rows = await prisma.$queryRaw<
       Array<{
         id: string;
-        has_data: boolean;
-        has_thumb: boolean;
-        has_drawing: boolean;
+        has_data: boolean | number;
+        has_thumb: boolean | number;
+        has_drawing: boolean | number;
       }>
     >`
       SELECT
@@ -153,9 +159,9 @@ export async function listSerializedCards(profileId: string) {
     `;
     for (const row of rows) {
       flags.set(row.id, {
-        hasData: Boolean(row.has_data),
-        hasThumbnail: Boolean(row.has_thumb),
-        hasDrawing: Boolean(row.has_drawing),
+        hasData: row.has_data === true || row.has_data === 1,
+        hasThumbnail: row.has_thumb === true || row.has_thumb === 1,
+        hasDrawing: row.has_drawing === true || row.has_drawing === 1,
       });
     }
   }
