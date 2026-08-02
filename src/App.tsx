@@ -23,12 +23,16 @@ import { ProfileAvatarButton } from './components/ProfileAvatarButton';
 import { AccountPanel } from './components/AccountPanel';
 import { AuthScreen } from './components/AuthScreen';
 import { UpdateBanner } from './components/UpdateBanner';
+import { CobeaLogoMark } from './components/CobeaBrand';
 import { ITEM_DRAG_MIME } from './hooks/useCardDragPreview';
 import { placementSizeFromAspect, getItemAspectRatio } from './components/MoodboardCardFrame';
 import { api, dataUrlToBlob, getToken, setToken, type DriveFolderRef, type StorageState } from './lib/api';
 import { useAppUpdate } from './hooks/useAppUpdate';
 
 const THEME_KEY = 'zen_gallery_theme_v1';
+
+/** Prevents React Strict Mode double-mount from running bootstrap/sync twice. */
+let bootstrapStarted = false;
 
 function applyMeStorage(
   me: StorageState,
@@ -95,6 +99,40 @@ export default function App() {
   const [zenMode, setZenMode] = useState(false);
   const [columnCount, setColumnCount] = useState<number>(4);
 
+  const handleToggleZenMode = useCallback(async () => {
+    if (zenMode) {
+      setZenMode(false);
+      if (document.fullscreenElement) {
+        try {
+          await document.exitFullscreen();
+        } catch {
+          /* ignore */
+        }
+      }
+      return;
+    }
+
+    setZenMode(true);
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch {
+      /* Browser may deny fullscreen without gesture / policy */
+    }
+  }, [zenMode]);
+
+  // Leaving browser fullscreen (Esc / F11) also leaves Zen mode
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement) {
+        setZenMode(false);
+      }
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
   const selectedFolderIdRef = useRef(selectedFolderId);
   selectedFolderIdRef.current = selectedFolderId;
 
@@ -140,14 +178,19 @@ export default function App() {
       const me = await api.me();
       applyMeStorage(me, storageSetters);
       if (
-        me.storageMode === 'google' &&
-        me.googleConnected &&
-        (me.googleSyncFolders?.length ?? 0) > 0
+        me.storageMode !== 'google' ||
+        !me.googleConnected ||
+        (me.googleSyncFolders?.length ?? 0) === 0
       ) {
-        const result = await api.syncGoogleDrive();
-        setGoogleLastSyncAt(result.googleLastSyncAt);
-        if (result.imported > 0) await refreshGallery();
+        return;
       }
+      // Don't block / re-scan Drive on every page load — only if idle > 6h
+      const last = me.googleLastSyncAt ? Date.parse(me.googleLastSyncAt) : 0;
+      if (last && Date.now() - last < 6 * 60 * 60 * 1000) return;
+
+      const result = await api.syncGoogleDrive();
+      setGoogleLastSyncAt(result.googleLastSyncAt);
+      if (result.imported > 0) await refreshGallery();
     } catch {
       /* ignore background sync errors */
     }
@@ -157,22 +200,31 @@ export default function App() {
     setBootstrapping(true);
     setLoadError(null);
     try {
-      const config = await api.config();
-      setGoogleConfigured(config.googleConfigured);
-
       const token = getToken();
       if (!token) {
+        const config = await api.config();
+        setGoogleConfigured(config.googleConfigured);
         setAuthed(false);
         return;
       }
-      const me = await api.me();
+
+      // Parallel: config + session + gallery
+      const [config, me, cardsRes, foldersRes] = await Promise.all([
+        api.config(),
+        api.me(),
+        api.listCards(),
+        api.listFolders(),
+      ]);
+      setGoogleConfigured(config.googleConfigured);
       setProfile(me.profile);
       applyMeStorage(me, storageSetters);
       if (me.profile.theme === 'light' || me.profile.theme === 'dark') {
         setTheme(me.profile.theme);
       }
+      setImages(cardsRes.cards);
+      setFolders(foldersRes.folders);
       setAuthed(true);
-      await refreshGallery();
+      // Show UI immediately; sync Drive in background only if idle > 6h
       void maybeBackgroundSync();
     } catch {
       setToken(null);
@@ -181,9 +233,12 @@ export default function App() {
     } finally {
       setBootstrapping(false);
     }
-  }, [maybeBackgroundSync, refreshGallery, storageSetters]);
+  }, [maybeBackgroundSync, storageSetters]);
 
   useEffect(() => {
+    if (bootstrapStarted) return;
+    bootstrapStarted = true;
+
     const params = new URLSearchParams(window.location.search);
     const google = params.get('google');
     if (google) {
@@ -193,7 +248,8 @@ export default function App() {
       }
     }
     void bootstrap();
-  }, [bootstrap]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!isCardDragging) {
@@ -687,7 +743,17 @@ export default function App() {
         const matchesTitle = img.title.toLowerCase().includes(query);
         const matchesTag = img.tags?.some((t) => t.toLowerCase().includes(query));
         const matchesMarkdown = img.markdown?.toLowerCase().includes(query);
-        if (!matchesTitle && !matchesTag && !matchesMarkdown) return false;
+        const matchesNotes = img.additionalNotes?.toLowerCase().includes(query);
+        const matchesFilename = img.filename?.toLowerCase().includes(query);
+        if (
+          !matchesTitle &&
+          !matchesTag &&
+          !matchesMarkdown &&
+          !matchesNotes &&
+          !matchesFilename
+        ) {
+          return false;
+        }
       }
       return true;
     });
@@ -716,9 +782,14 @@ export default function App() {
     setProfile(p);
     setAuthed(true);
     try {
-      const me = await api.me();
+      const [me, cardsRes, foldersRes] = await Promise.all([
+        api.me(),
+        api.listCards(),
+        api.listFolders(),
+      ]);
       applyMeStorage(me, storageSetters);
-      await refreshGallery();
+      setImages(cardsRes.cards);
+      setFolders(foldersRes.folders);
       void maybeBackgroundSync();
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Load failed');
@@ -742,8 +813,12 @@ export default function App() {
     return (
       <>
         {updateBanner}
-        <div className="min-h-screen flex items-center justify-center text-sm text-zinc-500">
-          Chargement…
+        <div
+          className="min-h-screen flex items-center justify-center text-zinc-900 dark:text-zinc-50"
+          role="status"
+          aria-label="Chargement"
+        >
+          <CobeaLogoMark className="w-14 h-14 animate-spin" title="Chargement" />
         </div>
       </>
     );
@@ -869,11 +944,12 @@ export default function App() {
         }}
         onRemoveTagFilter={removeTagFilter}
         zenMode={zenMode}
-        onToggleZenMode={() => setZenMode(!zenMode)}
+        onToggleZenMode={() => void handleToggleZenMode()}
         columnCount={columnCount}
         onChangeColumnCount={setColumnCount}
-        totalImagesCount={images.length}
+        totalImagesCount={filteredImages.length}
         hiddenForSelection={showSelectionDock}
+        typeToSearchEnabled={!selectedImageId && !isAddModalOpen && !isAccountOpen}
       />
 
       <ImageModal

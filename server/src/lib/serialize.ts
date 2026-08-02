@@ -1,7 +1,22 @@
 import type { Card, CardFile, Folder, Profile } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { env } from './env.js';
+import { prisma } from './prisma.js';
 
 export type CardWithFile = Card & { file: CardFile | null };
+
+/** Lightweight file fields for gallery list (no BLOBs). */
+export type CardFileSummary = {
+  mimeType: string;
+  filename: string;
+  driveFileId: string | null;
+  thumbnailLink: string | null;
+  hasData: boolean;
+  hasThumbnail: boolean;
+  hasDrawing: boolean;
+};
+
+export type CardForList = Card & { file: CardFileSummary | null };
 
 function mediaUrl(cardId: string, kind: 'file' | 'thumb' | 'drawing'): string {
   const base = env.PUBLIC_API_URL.replace(/\/$/, '');
@@ -9,21 +24,39 @@ function mediaUrl(cardId: string, kind: 'file' | 'thumb' | 'drawing'): string {
   return base ? `${base}${path}` : path;
 }
 
-/** Shape expected by the Cobea frontend ImageItem */
-export function serializeCard(card: CardWithFile) {
-  const file = card.file;
+function buildCardPayload(
+  card: Card,
+  file: {
+    mimeType?: string;
+    filename?: string;
+    driveFileId?: string | null;
+    hasData: boolean;
+    hasThumbnail: boolean;
+    hasDrawing: boolean;
+  } | null,
+  opts?: { truncateText?: boolean }
+) {
   let url = card.url;
 
   if (card.kind === 'image') {
-    if (file?.data) {
+    if (file?.hasData) {
       url = mediaUrl(card.id, 'file');
-    } else if (file?.thumbnailData) {
+    } else if (file?.hasThumbnail) {
       url = mediaUrl(card.id, 'thumb');
-    } else if (file?.thumbnailLink) {
-      url = mediaUrl(card.id, 'thumb');
-    } else if (!url && file?.driveFileId) {
-      url = mediaUrl(card.id, 'file');
+    } else {
+      url = url || '';
     }
+  }
+
+  const driveFileId = file?.driveFileId ?? undefined;
+  const truncate = opts?.truncateText !== false;
+  let markdown = card.markdown ?? undefined;
+  let additionalNotes = card.additionalNotes ?? undefined;
+  if (truncate && markdown && markdown.length > 800) {
+    markdown = `${markdown.slice(0, 800)}…`;
+  }
+  if (truncate && additionalNotes && additionalNotes.length > 400) {
+    additionalNotes = `${additionalNotes.slice(0, 400)}…`;
   }
 
   return {
@@ -39,15 +72,112 @@ export function serializeCard(card: CardWithFile) {
     height: card.height ?? undefined,
     source: card.source,
     kind: card.kind,
-    markdown: card.markdown ?? undefined,
-    additionalNotes: card.additionalNotes ?? undefined,
+    markdown,
+    additionalNotes,
     folderId: card.folderId,
-    drawingData: file?.drawingData ? mediaUrl(card.id, 'drawing') : undefined,
+    drawingData: file?.hasDrawing ? mediaUrl(card.id, 'drawing') : undefined,
     moodboardPlacements: card.moodboardPlacements ?? undefined,
-    hasFile: Boolean(file?.data || file?.driveFileId),
+    hasFile: Boolean(file?.hasData || file?.driveFileId),
+    hasLocalFile: Boolean(file?.hasData),
     mimeType: file?.mimeType,
-    driveFileId: file?.driveFileId ?? undefined,
+    filename: file?.filename,
+    driveFileId,
+    driveUrl: driveFileId
+      ? `https://drive.google.com/file/d/${driveFileId}/view`
+      : undefined,
   };
+}
+
+/** Full card (detail / mutations) — may include file row with blobs in memory. */
+export function serializeCard(card: CardWithFile) {
+  const file = card.file;
+  return buildCardPayload(
+    card,
+    file
+      ? {
+          mimeType: file.mimeType,
+          filename: file.filename,
+          driveFileId: file.driveFileId,
+          hasData: Boolean(file.data),
+          hasThumbnail: Boolean(file.thumbnailData),
+          hasDrawing: Boolean(file.drawingData),
+        }
+      : null,
+    { truncateText: false }
+  );
+}
+
+/** Gallery list — never loads BYTEA columns from Postgres. */
+export async function listSerializedCards(profileId: string) {
+  const cards = await prisma.card.findMany({
+    where: { profileId },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      file: {
+        select: {
+          id: true,
+          mimeType: true,
+          filename: true,
+          driveFileId: true,
+          thumbnailLink: true,
+        },
+      },
+    },
+  });
+
+  const fileIds = cards
+    .map((c) => c.file?.id)
+    .filter((id): id is string => Boolean(id));
+
+  const flags = new Map<
+    string,
+    { hasData: boolean; hasThumbnail: boolean; hasDrawing: boolean }
+  >();
+
+  if (fileIds.length > 0) {
+    const rows = await prisma.$queryRaw<
+      Array<{
+        id: string;
+        has_data: boolean;
+        has_thumb: boolean;
+        has_drawing: boolean;
+      }>
+    >`
+      SELECT
+        id,
+        (data IS NOT NULL) AS has_data,
+        (thumbnail_data IS NOT NULL) AS has_thumb,
+        (drawing_data IS NOT NULL) AS has_drawing
+      FROM card_files
+      WHERE id IN (${Prisma.join(fileIds)})
+    `;
+    for (const row of rows) {
+      flags.set(row.id, {
+        hasData: Boolean(row.has_data),
+        hasThumbnail: Boolean(row.has_thumb),
+        hasDrawing: Boolean(row.has_drawing),
+      });
+    }
+  }
+
+  return cards.map((card) => {
+    const f = card.file;
+    const flag = f ? flags.get(f.id) : undefined;
+    return buildCardPayload(
+      card,
+      f
+        ? {
+            mimeType: f.mimeType,
+            filename: f.filename,
+            driveFileId: f.driveFileId,
+            hasData: flag?.hasData ?? false,
+            hasThumbnail: flag?.hasThumbnail ?? false,
+            hasDrawing: flag?.hasDrawing ?? false,
+          }
+        : null,
+      { truncateText: true }
+    );
+  });
 }
 
 export function serializeFolder(folder: Folder) {

@@ -3,7 +3,8 @@ import type { Express } from 'express';
 export type StoredFileMeta = {
   mimeType: string;
   filename: string;
-  size: number;
+  /** Bytes; may exceed 32-bit — stored as BigInt in DB */
+  size: number | bigint;
   driveFileId?: string;
   thumbnailLink?: string;
   thumbnailData?: Buffer;
@@ -27,6 +28,6 @@ export type StorageAdapter = {
       driveFileId: string | null;
       mimeType: string;
     }
-  ) => Promise<{ buffer: Buffer; mimeType: string } | null>;
+  ) => Promise<{ buffer: Buffer; mimeType: string; filenameExt?: string } | null>;
   deleteRemoteFile?: (userId: string, driveFileId: string) => Promise<void>;
 };

@@ -46,31 +46,28 @@ Voir [`server/.env.example`](server/.env.example).
   `https://cobea.tnas-movies.ddns.net/api/auth/google/callback`  
   + Drive API activée
 
-### Docker sur le NAS
+### Docker sur le NAS (TerraMaster)
 
-Prérequis :
-- stack Postgres partagée (`shared-postgres` sur `postgres-net`)
-- base `cobea_db` + user `cobea` créés
-- repo déployé dans `/Volume1/Docker/cobea` (adapter le chemin dans `docker-compose.yml` si besoin)
+Sur le disque, **seulement** :
 
-Services :
-
-| Conteneur | Port NAS | Rôle |
-|-----------|----------|------|
-| `cobea-api` | **3847** | API Express (+ `prisma db push` au démarrage) |
-| `cobea-frontend` | **8083** | Nginx (SPA + proxy `/api` → API) |
-
-```bash
-cd /Volume1/Docker/cobea
-docker compose up -d --build
+```
+/Volume1/Docker/cobea/
+├── frontend/
+└── backend/
 ```
 
-Accès : `https://cobea.tnas-movies.ddns.net` (reverse proxy → `:8083` ; `/api` → API).
+Le YAML se colle dans Docker Manager (pas besoin du fichier sur le NAS).
 
-Reverse proxy : pointer le host vers le port **8083** du NAS (pas besoin d’exposer l’API publiquement).
+#### Déployer
 
-Si tu actives Google Drive, ajoute la redirect OAuth  
-`https://cobea.tnas-movies.ddns.net/api/auth/google/callback`.
+```bash
+npm run prepare:nas
+```
+
+Copie `frontend/` et `backend/` → `/Volume1/Docker/cobea/`, puis **Restart**.
+
+Accès : `https://cobea.tnas-movies.ddns.net` (proxy → `:8083`).  
+OAuth redirect : `https://cobea.tnas-movies.ddns.net/api/auth/google/callback`.
 
 ## Auth
 

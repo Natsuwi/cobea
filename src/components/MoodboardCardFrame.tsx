@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ImageItem, MoodboardPlacement, isNoteItem } from '../types';
 import { MarkdownPreview } from './MarkdownPreview';
+import { FileCardPreview, isDisplayableImageItem } from './FileCardPreview';
 
 const MIN_SIZE = 6;
 /** Max side of a new moodboard card, as % of the canvas axis it maps to. */
@@ -11,7 +12,9 @@ type ResizeHandle = 'nw' | 'ne' | 'sw' | 'se';
 export function getItemAspectRatio(item: ImageItem): number {
   if (item.aspectRatio && item.aspectRatio > 0) return item.aspectRatio;
   if (item.width && item.height && item.height > 0) return item.width / item.height;
-  return isNoteItem(item) ? 1 : 1.2;
+  if (isNoteItem(item)) return 1;
+  if (!isDisplayableImageItem(item)) return 0.85;
+  return 1.2;
 }
 
 /** Visual aspect ratio (width / height) → placement % that match on a given canvas. */
@@ -81,6 +84,8 @@ export function MoodboardCardFrame({
   const [naturalAR, setNaturalAR] = useState<number | null>(null);
   const aspectRatio = naturalAR ?? fallbackAR;
   const isNote = isNoteItem(item);
+  const showAsFile = !isNote && !isDisplayableImageItem(item);
+  const fixedAspect = isNote || showAsFile;
 
   return (
     <div
@@ -89,8 +94,8 @@ export function MoodboardCardFrame({
         left: `${placement.x}%`,
         top: `${placement.y}%`,
         width: `${placement.width}%`,
-        height: isNote ? undefined : 'auto',
-        aspectRatio: isNote ? String(aspectRatio) : undefined,
+        height: fixedAspect ? undefined : 'auto',
+        aspectRatio: fixedAspect ? String(aspectRatio) : undefined,
         transform: `rotate(${rotation}deg)`,
         transformOrigin: 'center center',
         zIndex: isSelected ? 999 : (placement.zIndex ?? 1),
@@ -104,7 +109,7 @@ export function MoodboardCardFrame({
     >
       <div
         className={`relative w-full overflow-hidden rounded-xl shadow-2xl border ${
-          isNote ? 'h-full' : ''
+          fixedAspect ? 'h-full' : ''
         } ${
           isSelected
             ? 'border-amber-400 ring-2 ring-amber-400/40'
@@ -117,6 +122,15 @@ export function MoodboardCardFrame({
               {item.title}
             </p>
             <MarkdownPreview content={item.markdown || ''} />
+          </div>
+        ) : showAsFile ? (
+          <div className="w-full h-full pointer-events-none">
+            <FileCardPreview
+              title={item.title}
+              mimeType={item.mimeType}
+              filename={item.filename}
+              size="sm"
+            />
           </div>
         ) : (
           <img

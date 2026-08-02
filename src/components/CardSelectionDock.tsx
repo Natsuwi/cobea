@@ -6,6 +6,7 @@ import { FolderPicker } from './FolderPicker';
 import { Folder as FolderType } from '../types';
 import { ITEM_DRAG_MIME } from '../hooks/useCardDragPreview';
 import { MarkdownPreview } from './MarkdownPreview';
+import { FileCardPreview, isDisplayableImageItem } from './FileCardPreview';
 
 const CARD_W = 64;
 const CARD_H = 104;
@@ -49,10 +50,15 @@ function DeckCardPreview({ item, index, total }: { item: ImageItem; index: numbe
           <div className="w-full h-full p-1.5 text-[6px] leading-tight text-zinc-600 dark:text-zinc-300 overflow-hidden">
             <MarkdownPreview content={item.markdown || ''} className="line-clamp-6" />
           </div>
-        ) : item.url ? (
+        ) : isDisplayableImageItem(item) && item.url ? (
           <img src={item.url} alt="" className="w-full h-full object-cover" draggable={false} />
         ) : (
-          <div className="w-full h-full bg-zinc-200 dark:bg-zinc-700" />
+          <FileCardPreview
+            title={item.title}
+            mimeType={item.mimeType}
+            filename={item.filename}
+            size="sm"
+          />
         )}
       </div>
     </div>
@@ -94,9 +100,9 @@ export const CardSelectionDock: React.FC<CardSelectionDockProps> = ({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-          className={`selection-dock-clip fixed inset-x-0 bottom-0 z-[55] overflow-hidden pointer-events-none ${
-            isRaised ? 'selection-dock-clip--raised' : ''
-          }`}
+          className={`selection-dock-clip fixed inset-x-0 bottom-0 z-[55] pointer-events-none ${
+            isFolderPickerOpen ? 'overflow-visible' : 'overflow-hidden'
+          } ${isRaised ? 'selection-dock-clip--raised' : ''}`}
         >
           <div className="selection-dock-inner pointer-events-auto">
             <div className="selection-dock-curtain" aria-hidden />
@@ -106,7 +112,7 @@ export const CardSelectionDock: React.FC<CardSelectionDockProps> = ({
                 onDragOver={onDragOver}
                 onDragLeave={onDragLeave}
                 onDrop={onDrop}
-                className={`selection-dock-dropzone relative flex-1 min-w-0 min-h-0 rounded-t-3xl border-2 border-b-0 border-dashed transition-all duration-200 ${
+                className={`selection-dock-dropzone relative z-0 flex-1 min-w-0 min-h-0 rounded-t-3xl border-2 border-b-0 border-dashed transition-all duration-200 ${
                   isOver
                     ? 'selection-dock-dropzone--over'
                     : isDragActive
@@ -148,9 +154,9 @@ export const CardSelectionDock: React.FC<CardSelectionDockProps> = ({
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="flex shrink-0 items-center gap-2 self-start pt-1"
+                  className="relative z-30 flex shrink-0 items-center gap-2 self-start pt-1"
                 >
-                  <div className="relative">
+                  <div className="relative z-30">
                     <button
                       type="button"
                       onClick={() => setIsFolderPickerOpen((v) => !v)}

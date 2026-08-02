@@ -1,15 +1,21 @@
+# Coller ce YAML dans TerraMaster Docker Manager.
+# Sur le disque NAS, uniquement :
+#   /Volume1/Docker/cobea/frontend/
+#   /Volume1/Docker/cobea/backend/
+#
+# PC: npm run prepare:nas → copie les 2 dossiers → Restart
+
 services:
   cobea-api:
-    build: /Volume1/Docker/cobea/server
+    image: node:22-alpine
     container_name: cobea-api
+    working_dir: /app
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://cobea:Drx2OtnGv%249Ed%2A@shared-postgres:5432/cobea_db
       PORT: 3847
       STORAGE_MODE: standard
-      # Origine publique (reverse proxy → :8083)
       CORS_ORIGIN: https://cobea.tnas-movies.ddns.net
-      # Vide = URLs relatives /api/... (nginx du front proxy vers l’API)
       PUBLIC_API_URL: ""
       JWT_SECRET: ee4a43e1de3b3562c42711f757b0c0ed1a461c6ce775b740a7242b56aa09f447
       GOOGLE_CLIENT_ID: ""
@@ -17,6 +23,10 @@ services:
       GOOGLE_REDIRECT_URI: https://cobea.tnas-movies.ddns.net/api/auth/google/callback
     ports:
       - "3847:3847"
+    volumes:
+      - /Volume1/Docker/cobea/backend:/app
+      - cobea_api_node_modules:/app/node_modules
+    command: ["sh", "/app/docker-entrypoint.sh"]
     networks:
       - postgres-net
     logging:
@@ -26,18 +36,16 @@ services:
         max-file: "3"
 
   cobea-frontend:
-    build:
-      context: /Volume1/Docker/cobea
-      dockerfile: Dockerfile
-      args:
-        # Vide = même origine via nginx (/api proxy). Sinon URL publique de l’API.
-        VITE_API_URL: ""
-        # Change à chaque rebuild pour déclencher le bandeau de maj côté clients
-        VITE_APP_BUILD_ID: "${COBEA_BUILD_ID:-}"
+    image: nginx:alpine
     container_name: cobea-frontend
     restart: unless-stopped
+    user: "0:0"
     ports:
       - "8083:80"
+    volumes:
+      # writable : permet de corriger un mauvais nestage / page diagnostic
+      - /Volume1/Docker/cobea/frontend:/usr/share/nginx/html
+    command: ["sh", "/usr/share/nginx/html/_deploy/entrypoint.sh"]
     networks:
       - postgres-net
     depends_on:
@@ -47,6 +55,9 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  cobea_api_node_modules:
 
 networks:
   postgres-net:

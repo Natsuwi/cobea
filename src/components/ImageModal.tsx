@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { ImageItem } from '../types';
 import { DetailDrawingLayer } from './drawing/DetailDrawingLayer';
+import { FileCardPreview, isDisplayableImageItem } from './FileCardPreview';
+import { api } from '../lib/api';
 
 interface ImageModalProps {
   image: ImageItem | null;
@@ -34,6 +36,7 @@ export const ImageModal: React.FC<ImageModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   const [showAddTag, setShowAddTag] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -47,19 +50,55 @@ export const ImageModal: React.FC<ImageModalProps> = ({
 
   if (!image) return null;
 
+  const showAsFile = !isDisplayableImageItem(image);
+
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(image.url);
+    const link = image.driveUrl || image.url;
+    if (!link) return;
+    navigator.clipboard.writeText(link);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleDownload = () => {
-    const link = document.createElement('a');
-    link.href = image.url;
-    link.download = `${image.title || 'galerie-image'}.jpg`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownload = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      // Drive-only cards: open Google Drive (no proxy download through Cobea)
+      if (image.driveFileId && !image.hasLocalFile) {
+        const driveLink =
+          image.driveUrl ||
+          `https://drive.google.com/file/d/${image.driveFileId}/view`;
+        window.open(driveLink, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      if (image.hasLocalFile || image.hasFile) {
+        await api.downloadCardFile(
+          image.id,
+          image.filename || image.title || undefined
+        );
+      } else if (image.url) {
+        const link = document.createElement('a');
+        link.href = image.url;
+        link.download = image.filename || `${image.title || 'galerie-image'}.jpg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    } catch (err) {
+      console.error(err);
+      if (image.driveFileId) {
+        const driveLink =
+          image.driveUrl ||
+          `https://drive.google.com/file/d/${image.driveFileId}/view`;
+        window.open(driveLink, '_blank', 'noopener,noreferrer');
+      } else {
+        window.alert(err instanceof Error ? err.message : 'Téléchargement impossible');
+      }
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const handleAddTagSubmit = (e: React.FormEvent) => {
@@ -91,12 +130,23 @@ export const ImageModal: React.FC<ImageModalProps> = ({
             className="flex-1 bg-zinc-950 min-h-[40vh] md:min-h-0 overflow-hidden"
           >
             <div className="absolute inset-0 flex items-center justify-center p-4 md:p-8">
-              <img
-                src={image.url}
-                alt={image.title}
-                draggable={false}
-                className="max-h-full max-w-full w-auto h-auto object-contain rounded-xl shadow-2xl pointer-events-none"
-              />
+              {showAsFile ? (
+                <div className="w-full max-w-md aspect-[0.85] rounded-2xl overflow-hidden shadow-2xl pointer-events-none border border-white/10">
+                  <FileCardPreview
+                    title={image.title}
+                    mimeType={image.mimeType}
+                    filename={image.filename}
+                    size="lg"
+                  />
+                </div>
+              ) : (
+                <img
+                  src={image.url}
+                  alt={image.title}
+                  draggable={false}
+                  className="max-h-full max-w-full w-auto h-auto object-contain rounded-xl shadow-2xl pointer-events-none"
+                />
+              )}
             </div>
           </DetailDrawingLayer>
 
@@ -105,7 +155,7 @@ export const ImageModal: React.FC<ImageModalProps> = ({
             <div className="space-y-4">
               <div>
                 <h3 className="text-xl font-medium tracking-tight text-zinc-900 dark:text-zinc-100">
-                  {image.title || 'Image sans titre'}
+                  {image.title || (showAsFile ? 'Fichier sans titre' : 'Image sans titre')}
                 </h3>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
                   Ajoutée le{' '}
@@ -179,7 +229,9 @@ export const ImageModal: React.FC<ImageModalProps> = ({
                     ? 'Importation locale'
                     : image.source === 'url'
                       ? 'Lien Web'
-                      : 'Galerie Zen'}
+                      : image.source === 'drive'
+                        ? 'Google Drive'
+                        : 'Galerie Zen'}
                 </span>
               </div>
             </div>
@@ -213,10 +265,17 @@ export const ImageModal: React.FC<ImageModalProps> = ({
                 <button
                   type="button"
                   onClick={handleDownload}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-medium bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 hover:opacity-90 transition-all"
+                  disabled={downloading || (!image.hasFile && !image.driveFileId && !image.url)}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-medium bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 hover:opacity-90 transition-all disabled:opacity-50"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Télécharger</span>
+                  <span>
+                    {downloading
+                      ? 'Ouverture…'
+                      : image.driveFileId && !image.hasLocalFile
+                        ? 'Ouvrir dans Drive'
+                        : 'Télécharger'}
+                  </span>
                 </button>
 
                 <button

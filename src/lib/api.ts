@@ -168,8 +168,153 @@ export const api = {
       imported: number;
       scanned: number;
       skipped: number;
+      folderCount?: number;
       googleLastSyncAt: string | null;
     }>('/api/auth/google/sync', { method: 'POST' }),
+
+  /** Manual sync with live progress (SSE). Pass AbortSignal to interrupt. */
+  async syncGoogleDriveWithProgress(
+    onProgress: (p: {
+      phase: 'listing' | 'importing' | 'done';
+      percent: number;
+      message: string;
+      current?: number;
+      total?: number;
+      imported?: number;
+      scanned?: number;
+      skipped?: number;
+      folderCount?: number;
+    }) => void,
+    signal?: AbortSignal
+  ): Promise<{
+    imported: number;
+    scanned: number;
+    skipped: number;
+    folderCount?: number;
+    cancelled?: boolean;
+    googleLastSyncAt: string | null;
+  }> {
+    const token = getToken();
+    const headers = new Headers({ Accept: 'text/event-stream' });
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+
+    const res = await fetch(`${API_BASE}/api/auth/google/sync?stream=1`, {
+      method: 'POST',
+      headers,
+      signal,
+    });
+    if (!res.ok || !res.body) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(
+        (err as { error?: string }).error || `Sync failed (${res.status})`
+      );
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result: {
+      imported: number;
+      scanned: number;
+      skipped: number;
+      folderCount?: number;
+      cancelled?: boolean;
+      googleLastSyncAt: string | null;
+    } | null = null;
+    let streamError: string | null = null;
+
+    const handleBlock = (block: string) => {
+      const lines = block.split('\n');
+      let event = 'message';
+      const dataLines: string[] = [];
+      for (const line of lines) {
+        if (line.startsWith('event:')) event = line.slice(6).trim();
+        else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+      }
+      if (dataLines.length === 0) return;
+      try {
+        const data = JSON.parse(dataLines.join('\n')) as Record<string, unknown>;
+        if (event === 'progress') {
+          onProgress(data as Parameters<typeof onProgress>[0]);
+        } else if (event === 'done') {
+          result = data as typeof result;
+          onProgress({
+            phase: 'done',
+            percent: 100,
+            message: result?.cancelled ? 'Sync interrompue' : 'Terminé',
+            imported: result?.imported,
+            scanned: result?.scanned,
+            skipped: result?.skipped,
+            folderCount: result?.folderCount,
+          });
+        } else if (event === 'error') {
+          streamError = String(data.error || 'Sync failed');
+        }
+      } catch {
+        /* ignore parse errors */
+      }
+    };
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() || '';
+        for (const part of parts) {
+          if (part.trim()) handleBlock(part);
+        }
+      }
+      if (buffer.trim()) handleBlock(buffer);
+    } catch (err) {
+      if (signal?.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
+        await request<{ ok: boolean; cancelled: boolean }>(
+          '/api/auth/google/sync/cancel',
+          { method: 'POST' }
+        ).catch(() => undefined);
+        return {
+          imported: 0,
+          scanned: 0,
+          skipped: 0,
+          cancelled: true,
+          googleLastSyncAt: null,
+        };
+      }
+      throw err;
+    }
+
+    if (streamError) throw new Error(streamError);
+    if (!result) {
+      if (signal?.aborted) {
+        return {
+          imported: 0,
+          scanned: 0,
+          skipped: 0,
+          cancelled: true,
+          googleLastSyncAt: null,
+        };
+      }
+      throw new Error('Sync interrupted');
+    }
+    return result;
+  },
+
+  cancelGoogleDriveSync: () =>
+    request<{ ok: boolean; cancelled: boolean }>('/api/auth/google/sync/cancel', {
+      method: 'POST',
+    }),
+
+  getDriveUsage: () =>
+    request<{
+      usage: {
+        day: string;
+        requests: number;
+        units: number;
+        dailyLimitUnits: number;
+        percentUsed: number;
+      };
+    }>('/api/auth/google/usage'),
 
   listFolders: () => request<{ folders: Folder[] }>('/api/folders'),
 
@@ -260,7 +405,63 @@ export const api = {
       method: 'POST',
       json: { cardIds, folderId },
     }),
+
+  /** Download local bytes, or open Drive for Drive-only cards. */
+  async downloadCardFile(
+    id: string,
+    preferredName?: string,
+    opts?: { driveUrl?: string | null }
+  ): Promise<void> {
+    if (opts?.driveUrl) {
+      window.open(opts.driveUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    const token = getToken();
+    const headers = new Headers();
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+
+    const res = await fetch(`${API_BASE}/api/cards/${id}/file`, { headers });
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        driveUrl?: string;
+      };
+      if (err.driveUrl) {
+        window.open(err.driveUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      throw new Error(err.error || `Download failed (${res.status})`);
+    }
+
+    const blob = await res.blob();
+    const fromHeader = parseFilenameFromDisposition(res.headers.get('Content-Disposition'));
+    const name = fromHeader || preferredName || 'download';
+
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(objectUrl);
+  },
 };
+
+function parseFilenameFromDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const utf = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf?.[1]) {
+    try {
+      return decodeURIComponent(utf[1].trim());
+    } catch {
+      /* ignore */
+    }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(header);
+  return plain?.[1]?.trim() || null;
+}
 
 /** Convert a data URL to a Blob for multipart upload */
 export function dataUrlToBlob(dataUrl: string): Blob {

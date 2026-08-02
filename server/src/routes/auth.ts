@@ -8,6 +8,7 @@ import { serializeProfile } from '../lib/serialize.js';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { env } from '../lib/env.js';
 import {
+  cancelSyncDriveFoldersForUser,
   exchangeGoogleCode,
   getGoogleAuthUrl,
   isEnvGoogleConfigured,
@@ -17,7 +18,9 @@ import {
   saveGoogleTokens,
   syncDriveFoldersForUser,
   type DriveFolderRef,
+  type DriveSyncProgress,
 } from '../storage/google.js';
+import { getDriveUsageSnapshot } from '../lib/driveQuota.js';
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -322,17 +325,84 @@ authRouter.get('/google/folders', requireAuth, async (req: AuthRequest, res) => 
 });
 
 authRouter.post('/google/sync', requireAuth, async (req: AuthRequest, res) => {
+  const wantsStream =
+    req.query.stream === '1' ||
+    String(req.headers.accept || '').includes('text/event-stream');
+
+  if (!wantsStream) {
+    try {
+      const result = await syncDriveFoldersForUser(req.auth!.userId, req.auth!.profileId);
+      const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+      res.json({
+        ...result,
+        googleLastSyncAt: user?.googleLastSyncAt?.toISOString() ?? null,
+      });
+    } catch (err) {
+      const status = (err as { status?: number }).status ?? 500;
+      res.status(status).json({
+        error: err instanceof Error ? err.message : 'Sync failed',
+      });
+    }
+    return;
+  }
+
+  res.status(200);
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (typeof (res as { flushHeaders?: () => void }).flushHeaders === 'function') {
+    (res as { flushHeaders: () => void }).flushHeaders();
+  }
+
+  const ac = new AbortController();
+  const onClose = () => ac.abort();
+  req.on('close', onClose);
+
+  const send = (event: string, data: unknown) => {
+    if (res.writableEnded) return;
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
   try {
-    const result = await syncDriveFoldersForUser(req.auth!.userId, req.auth!.profileId);
+    const result = await syncDriveFoldersForUser(
+      req.auth!.userId,
+      req.auth!.profileId,
+      {
+        onProgress: (p: DriveSyncProgress) => send('progress', p),
+        signal: ac.signal,
+      }
+    );
     const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
-    res.json({
+    send('done', {
       ...result,
       googleLastSyncAt: user?.googleLastSyncAt?.toISOString() ?? null,
     });
   } catch (err) {
-    const status = (err as { status?: number }).status ?? 500;
-    res.status(status).json({
+    send('error', {
       error: err instanceof Error ? err.message : 'Sync failed',
+    });
+  } finally {
+    req.off('close', onClose);
+    if (!res.writableEnded) res.end();
+  }
+});
+
+authRouter.post('/google/sync/cancel', requireAuth, async (req: AuthRequest, res) => {
+  const cancelled = cancelSyncDriveFoldersForUser(
+    req.auth!.userId,
+    req.auth!.profileId
+  );
+  res.json({ ok: true, cancelled });
+});
+
+authRouter.get('/google/usage', requireAuth, async (_req: AuthRequest, res) => {
+  try {
+    const usage = await getDriveUsageSnapshot();
+    res.json({ usage });
+  } catch (err) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : 'Failed to read usage',
     });
   }
 });

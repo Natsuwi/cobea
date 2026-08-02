@@ -3,10 +3,11 @@ import multer from 'multer';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
-import { serializeCard } from '../lib/serialize.js';
+import { serializeCard, listSerializedCards } from '../lib/serialize.js';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getStorageForUser, resolveFileBuffer } from '../storage/index.js';
 import { googleStorage } from '../storage/google.js';
+import { toDbFileSize } from '../lib/fileSize.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -27,12 +28,8 @@ const placementSchema = z.object({
 });
 
 cardsRouter.get('/', async (req: AuthRequest, res) => {
-  const cards = await prisma.card.findMany({
-    where: { profileId: req.auth!.profileId },
-    include: { file: true },
-    orderBy: { createdAt: 'desc' },
-  });
-  res.json({ cards: cards.map(serializeCard) });
+  const cards = await listSerializedCards(req.auth!.profileId);
+  res.json({ cards });
 });
 
 cardsRouter.get('/:id', async (req: AuthRequest, res) => {
@@ -115,7 +112,7 @@ cardsRouter.post('/', upload.single('file'), async (req: AuthRequest, res) => {
                   thumbnailLink: fileMeta.thumbnailLink ?? null,
                   thumbnailData: fileMeta.thumbnailData ?? null,
                   thumbnailMime: fileMeta.thumbnailMime ?? null,
-                  size: fileMeta.size,
+                  size: toDbFileSize(fileMeta.size),
                 },
               },
             }
@@ -233,7 +230,7 @@ cardsRouter.patch('/:id', upload.single('file'), async (req: AuthRequest, res) =
       const fileMeta = await storage.storeFile(req.auth!.userId, req.file, {
         title: (data.title as string) || existing.title,
       });
-      if (existing.file?.driveFileId) {
+      if (existing.file?.driveFileId && existing.source === 'uploaded') {
         await googleStorage.deleteRemoteFile?.(req.auth!.userId, existing.file.driveFileId);
       }
       await prisma.cardFile.upsert({
@@ -247,7 +244,7 @@ cardsRouter.patch('/:id', upload.single('file'), async (req: AuthRequest, res) =
           thumbnailLink: fileMeta.thumbnailLink ?? null,
           thumbnailData: fileMeta.thumbnailData ?? null,
           thumbnailMime: fileMeta.thumbnailMime ?? null,
-          size: fileMeta.size,
+          size: toDbFileSize(fileMeta.size),
         },
         update: {
           mimeType: fileMeta.mimeType,
@@ -257,7 +254,7 @@ cardsRouter.patch('/:id', upload.single('file'), async (req: AuthRequest, res) =
           thumbnailLink: fileMeta.thumbnailLink ?? null,
           thumbnailData: fileMeta.thumbnailData ?? null,
           thumbnailMime: fileMeta.thumbnailMime ?? null,
-          size: fileMeta.size,
+          size: toDbFileSize(fileMeta.size),
         },
       });
     }
@@ -285,7 +282,8 @@ cardsRouter.delete('/:id', async (req: AuthRequest, res) => {
     return;
   }
 
-  if (existing.file?.driveFileId) {
+  // Only delete Drive blobs that Cobea uploaded — never originals imported by sync.
+  if (existing.file?.driveFileId && existing.source === 'uploaded') {
     await googleStorage.deleteRemoteFile?.(req.auth!.userId, existing.file.driveFileId);
   }
 
@@ -364,6 +362,16 @@ async function serveCardMedia(
   }
 
   // kind === 'file'
+  // Drive-only cards: never stream the remote blob through Cobea (can be multi-GB).
+  if (!card.file.data && card.file.driveFileId) {
+    const driveUrl = `https://drive.google.com/file/d/${card.file.driveFileId}/view`;
+    res.status(409).json({
+      error: 'Le fichier reste sur Google Drive',
+      driveUrl,
+    });
+    return;
+  }
+
   const result = await resolveFileBuffer(req.auth!.userId, {
     data: card.file.data,
     driveFileId: card.file.driveFileId,
@@ -373,7 +381,16 @@ async function serveCardMedia(
     res.status(404).json({ error: 'File not available' });
     return;
   }
+
+  let filename = card.file.filename || card.title || 'download';
+  if (result.filenameExt) {
+    const base = filename.replace(/\.[^.]+$/, '');
+    filename = `${base}.${result.filenameExt}`;
+  }
+  const safeName = filename.replace(/["\r\n]/g, '_');
+
   res.setHeader('Content-Type', result.mimeType);
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
   res.setHeader('Cache-Control', 'private, max-age=300');
   res.send(result.buffer);
 }

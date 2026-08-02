@@ -1,13 +1,37 @@
 import { google, drive_v3 } from 'googleapis';
 import { Readable } from 'node:stream';
 import type { Express } from 'express';
+import { ItemSource } from '@prisma/client';
 import { env } from '../lib/env.js';
 import { prisma } from '../lib/prisma.js';
+import { recordDriveCall, type DriveCallKind } from '../lib/driveQuota.js';
+import { toDbFileSize } from '../lib/fileSize.js';
 import type { StorageAdapter, StoredFileMeta } from './types.js';
 
-const DRIVE_FIELDS = 'id,name,mimeType,thumbnailLink,size,modifiedTime,imageMediaMetadata';
+const DRIVE_FIELDS =
+  'id,name,mimeType,thumbnailLink,size,modifiedTime,imageMediaMetadata,shortcutDetails';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const IMAGE_MIME_PREFIX = 'image/';
+
+/** Google Workspace files must be exported (alt=media fails). */
+const GOOGLE_EXPORT_MAP: Record<string, { mime: string; ext: string }> = {
+  'application/vnd.google-apps.document': {
+    mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ext: 'docx',
+  },
+  'application/vnd.google-apps.spreadsheet': {
+    mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ext: 'xlsx',
+  },
+  'application/vnd.google-apps.presentation': {
+    mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    ext: 'pptx',
+  },
+  'application/vnd.google-apps.drawing': {
+    mime: 'image/png',
+    ext: 'png',
+  },
+};
 
 export type GoogleCredentialSource = {
   clientId: string;
@@ -104,7 +128,36 @@ export async function getAuthedDrive(userId: string) {
     });
   });
 
-  return google.drive({ version: 'v3', auth: client });
+  return instrumentDrive(google.drive({ version: 'v3', auth: client }));
+}
+
+function instrumentDrive(drive: drive_v3.Drive): drive_v3.Drive {
+  const files = drive.files;
+
+  const wrap = <T extends (...args: never[]) => unknown>(
+    fn: T,
+    kind: DriveCallKind
+  ): T =>
+    (async (...args: Parameters<T>) => {
+      recordDriveCall(kind);
+      return fn(...args);
+    }) as T;
+
+  const origGet = files.get.bind(files);
+  files.get = ((params?: drive_v3.Params$Resource$Files$Get, options?: unknown) => {
+    const alt = params?.alt;
+    const kind: DriveCallKind = alt === 'media' ? 'download' : 'read';
+    recordDriveCall(kind);
+    return origGet(params as drive_v3.Params$Resource$Files$Get, options as never);
+  }) as typeof files.get;
+
+  files.list = wrap(files.list.bind(files), 'list');
+  files.create = wrap(files.create.bind(files), 'edit');
+  files.delete = wrap(files.delete.bind(files), 'edit');
+  files.update = wrap(files.update.bind(files), 'edit');
+  files.export = wrap(files.export.bind(files), 'download');
+
+  return drive;
 }
 
 function escapeDriveQueryValue(value: string) {
@@ -191,13 +244,14 @@ export async function listDriveFolders(
   };
 }
 
-async function listImageFilesInFolder(
+/** All non-folder files directly in a Drive folder. */
+async function listSyncableFilesInFolder(
   drive: drive_v3.Drive,
   folderId: string
 ): Promise<drive_v3.Schema$File[]> {
   const q = [
     `'${escapeDriveQueryValue(folderId)}' in parents`,
-    `mimeType contains '${IMAGE_MIME_PREFIX}'`,
+    `mimeType != '${FOLDER_MIME}'`,
     'trashed = false',
   ].join(' and ');
 
@@ -216,6 +270,97 @@ async function listImageFilesInFolder(
     pageToken = res.data.nextPageToken ?? undefined;
   } while (pageToken);
   return files;
+}
+
+/** Immediate child folders of a Drive folder. */
+async function listChildFolders(
+  drive: drive_v3.Drive,
+  folderId: string
+): Promise<{ id: string; name: string }[]> {
+  const q = [
+    `'${escapeDriveQueryValue(folderId)}' in parents`,
+    `mimeType = '${FOLDER_MIME}'`,
+    'trashed = false',
+  ].join(' and ');
+
+  const folders: { id: string; name: string }[] = [];
+  let pageToken: string | undefined;
+  do {
+    const res = await drive.files.list({
+      q,
+      fields: 'nextPageToken, files(id, name)',
+      pageSize: 100,
+      pageToken,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    });
+    for (const f of res.data.files ?? []) {
+      if (f.id && f.name) folders.push({ id: f.id, name: f.name });
+    }
+    pageToken = res.data.nextPageToken ?? undefined;
+  } while (pageToken);
+  return folders;
+}
+
+type SyncFileHit = {
+  file: drive_v3.Schema$File;
+  /** Folder names from the selected sync root down to the file's parent folder */
+  pathTags: string[];
+};
+
+function normalizePathTags(names: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of names) {
+    const tag = raw.trim();
+    if (!tag) continue;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(tag);
+  }
+  return out;
+}
+
+/**
+ * All files under a folder, including nested subfolders (BFS).
+ * Each hit includes path folder names for tagging.
+ */
+async function listSyncableFilesRecursive(
+  drive: drive_v3.Drive,
+  rootFolderId: string,
+  rootFolderName: string
+): Promise<SyncFileHit[]> {
+  const out: SyncFileHit[] = [];
+  const seenFiles = new Set<string>();
+  const seenFolders = new Set<string>();
+  const queue: { id: string; path: string[] }[] = [
+    { id: rootFolderId, path: normalizePathTags([rootFolderName]) },
+  ];
+
+  while (queue.length > 0) {
+    const { id: folderId, path } = queue.shift()!;
+    if (seenFolders.has(folderId)) continue;
+    seenFolders.add(folderId);
+
+    const files = await listSyncableFilesInFolder(drive, folderId);
+    for (const f of files) {
+      if (!f.id || seenFiles.has(f.id)) continue;
+      seenFiles.add(f.id);
+      out.push({ file: f, pathTags: path });
+    }
+
+    const children = await listChildFolders(drive, folderId);
+    for (const child of children) {
+      if (seenFolders.has(child.id)) continue;
+      queue.push({
+        id: child.id,
+        path: normalizePathTags([...path, child.name]),
+      });
+    }
+  }
+
+  return out;
 }
 
 async function cacheThumbnailFromLink(
@@ -237,112 +382,363 @@ async function cacheThumbnailFromLink(
 }
 
 export function parseSyncFolders(raw: unknown): DriveFolderRef[] {
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
   if (!Array.isArray(raw)) return [];
   return raw
     .map((item) => {
       if (!item || typeof item !== 'object') return null;
       const id = (item as { id?: unknown }).id;
       const name = (item as { name?: unknown }).name;
-      if (typeof id !== 'string' || typeof name !== 'string') return null;
-      return { id, name };
+      if (typeof id !== 'string' || !id) return null;
+      return {
+        id,
+        name: typeof name === 'string' && name ? name : 'Dossier',
+      };
     })
     .filter((x): x is DriveFolderRef => Boolean(x));
 }
 
+export type DriveSyncProgress = {
+  phase: 'listing' | 'importing' | 'done';
+  percent: number;
+  message: string;
+  current?: number;
+  total?: number;
+  imported?: number;
+  scanned?: number;
+  skipped?: number;
+  folderCount?: number;
+};
+
+export type DriveSyncResult = {
+  imported: number;
+  scanned: number;
+  skipped: number;
+  folderCount: number;
+  cancelled?: boolean;
+};
+
 /**
- * Import new image files from sync folders into the user's gallery.
- * Soft-handles missing Drive files already linked (leave card, clear nothing for v1).
+ * Import files from sync folders into the gallery (images + documents).
+ * Concurrent syncs for the same user are coalesced (avoids duplicate cards).
  */
-export async function syncDriveFoldersForUser(
+const syncInFlight = new Map<string, Promise<DriveSyncResult>>();
+const syncAbortControllers = new Map<string, AbortController>();
+
+export function cancelSyncDriveFoldersForUser(userId: string, profileId: string): boolean {
+  const key = `${userId}:${profileId}`;
+  const ac = syncAbortControllers.get(key);
+  if (!ac) return false;
+  ac.abort();
+  return true;
+}
+
+export function syncDriveFoldersForUser(
   userId: string,
-  profileId: string
-): Promise<{ imported: number; scanned: number; skipped: number }> {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user?.googleRefreshToken) {
-    throw Object.assign(new Error('Google Drive not connected'), { status: 400 });
+  profileId: string,
+  opts?: {
+    onProgress?: (p: DriveSyncProgress) => void;
+    signal?: AbortSignal;
+  }
+): Promise<DriveSyncResult> {
+  const key = `${userId}:${profileId}`;
+  const pending = syncInFlight.get(key);
+  // Streaming callers need live progress — wait for any in-flight sync, then run with progress
+  if (pending && !opts?.onProgress) return pending;
+
+  const start = async () => {
+    if (pending) await pending.catch(() => undefined);
+    return runSyncDriveFoldersForUser(userId, profileId, opts?.onProgress, opts?.signal);
+  };
+
+  const run = start().finally(() => {
+    if (syncInFlight.get(key) === run) syncInFlight.delete(key);
+  });
+  syncInFlight.set(key, run);
+  return run;
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw Object.assign(new Error('Sync cancelled'), { status: 499, cancelled: true });
+  }
+}
+
+async function runSyncDriveFoldersForUser(
+  userId: string,
+  profileId: string,
+  onProgress?: (p: DriveSyncProgress) => void,
+  externalSignal?: AbortSignal
+): Promise<DriveSyncResult> {
+  const key = `${userId}:${profileId}`;
+  const ac = new AbortController();
+  syncAbortControllers.set(key, ac);
+
+  if (externalSignal) {
+    if (externalSignal.aborted) ac.abort();
+    else {
+      externalSignal.addEventListener('abort', () => ac.abort(), { once: true });
+    }
   }
 
-  const syncFolders = parseSyncFolders(user.googleSyncFolders);
-  if (syncFolders.length === 0) {
+  const signal = ac.signal;
+  const report = (p: DriveSyncProgress) => {
+    try {
+      onProgress?.(p);
+    } catch {
+      /* ignore listener errors */
+    }
+  };
+
+  let imported = 0;
+  let scanned = 0;
+  let skipped = 0;
+  let folderCount = 0;
+
+  const finish = async (
+    partial: DriveSyncResult,
+    message: string
+  ): Promise<DriveSyncResult> => {
     await prisma.user.update({
       where: { id: userId },
       data: { googleLastSyncAt: new Date() },
     });
-    return { imported: 0, scanned: 0, skipped: 0 };
-  }
+    report({
+      phase: 'done',
+      percent: partial.cancelled ? Math.min(99, Math.max(5, partial.scanned > 0 ? 40 : 10)) : 100,
+      message,
+      imported: partial.imported,
+      scanned: partial.scanned,
+      skipped: partial.skipped,
+      folderCount: partial.folderCount,
+    });
+    return partial;
+  };
 
-  const drive = await getAuthedDrive(userId);
-  let scanned = 0;
-  let imported = 0;
-  let skipped = 0;
+  try {
+    throwIfAborted(signal);
 
-  const existing = await prisma.cardFile.findMany({
-    where: {
-      driveFileId: { not: null },
-      card: { profileId },
-    },
-    select: { driveFileId: true },
-  });
-  const known = new Set(existing.map((e) => e.driveFileId!).filter(Boolean));
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.googleRefreshToken) {
+      throw Object.assign(new Error('Google Drive not connected'), { status: 400 });
+    }
 
-  for (const folder of syncFolders) {
-    const files = await listImageFilesInFolder(drive, folder.id);
-    for (const f of files) {
+    const syncFolders = parseSyncFolders(user.googleSyncFolders);
+    folderCount = syncFolders.length;
+    if (syncFolders.length === 0) {
+      return finish(
+        { imported: 0, scanned: 0, skipped: 0, folderCount: 0 },
+        'Aucun dossier à synchroniser'
+      );
+    }
+
+    const drive = await getAuthedDrive(userId);
+
+    const existing = await prisma.cardFile.findMany({
+      where: {
+        driveFileId: { not: null },
+        card: { profileId },
+      },
+      select: { driveFileId: true },
+    });
+    const known = new Set(existing.map((e) => e.driveFileId!).filter(Boolean));
+
+    const allHits: SyncFileHit[] = [];
+    for (let fi = 0; fi < syncFolders.length; fi++) {
+      throwIfAborted(signal);
+      const folder = syncFolders[fi]!;
+      report({
+        phase: 'listing',
+        percent: Math.round(((fi + 0.5) / syncFolders.length) * 35),
+        message: `Scan de « ${folder.name} »…`,
+        current: fi + 1,
+        total: syncFolders.length,
+      });
+      const hits = await listSyncableFilesRecursive(drive, folder.id, folder.name);
+      throwIfAborted(signal);
+      allHits.push(...hits);
+      report({
+        phase: 'listing',
+        percent: Math.round(((fi + 1) / syncFolders.length) * 35),
+        message: `« ${folder.name} » : ${hits.length} fichier${hits.length !== 1 ? 's' : ''}`,
+        current: fi + 1,
+        total: syncFolders.length,
+      });
+    }
+
+    const total = allHits.length;
+    if (total === 0) {
+      return finish(
+        { imported: 0, scanned: 0, skipped: 0, folderCount: syncFolders.length },
+        'Aucun fichier trouvé'
+      );
+    }
+
+    for (let i = 0; i < allHits.length; i++) {
+      throwIfAborted(signal);
+      const { file: f, pathTags } = allHits[i]!;
       if (!f.id) continue;
+
+      // Shortcuts: link the real target so we don't import the same doc twice
+      let driveFileId = f.id;
+      let mime = f.mimeType || 'application/octet-stream';
+      let name = f.name || 'Sans titre';
+      let thumbnailLink = f.thumbnailLink ?? null;
+      let size = toDbFileSize(f.size);
+      let modifiedTime = f.modifiedTime ? new Date(f.modifiedTime) : null;
+      let width = f.imageMediaMetadata?.width ?? undefined;
+      let height = f.imageMediaMetadata?.height ?? undefined;
+
+      if (mime === 'application/vnd.google-apps.shortcut') {
+        const targetId = f.shortcutDetails?.targetId;
+        const targetMime = f.shortcutDetails?.targetMimeType;
+        if (!targetId) continue;
+        driveFileId = targetId;
+        if (targetMime) mime = targetMime;
+      }
+
       scanned += 1;
-      if (known.has(f.id)) {
+      const percent = 35 + Math.round((scanned / total) * 65);
+      report({
+        phase: 'importing',
+        percent,
+        message: name,
+        current: scanned,
+        total,
+        imported,
+        scanned,
+        skipped,
+      });
+
+      if (known.has(driveFileId)) {
+        const existingCard = await prisma.card.findFirst({
+          where: { profileId, file: { driveFileId } },
+          select: { id: true },
+        });
+        if (existingCard) {
+          await prisma.card.update({
+            where: { id: existingCard.id },
+            data: { tags: pathTags },
+          });
+        }
         skipped += 1;
         continue;
       }
 
-      const width = f.imageMediaMetadata?.width ?? undefined;
-      const height = f.imageMediaMetadata?.height ?? undefined;
+      // Re-check DB (another sync may have inserted between list and create)
+      const already = await prisma.cardFile.findFirst({
+        where: { driveFileId, card: { profileId } },
+        select: { id: true, cardId: true },
+      });
+      if (already) {
+        known.add(driveFileId);
+        await prisma.card.update({
+          where: { id: already.cardId },
+          data: { tags: pathTags },
+        });
+        skipped += 1;
+        continue;
+      }
+
+      const isImage = mime.startsWith(IMAGE_MIME_PREFIX);
       const aspectRatio =
-        width && height && height > 0 ? width / height : undefined;
+        width && height && height > 0 ? width / height : isImage ? undefined : 0.85;
 
       let thumbnailData: Buffer | undefined;
       let thumbnailMime: string | undefined;
-      const cached = await cacheThumbnailFromLink(f.thumbnailLink, user.googleAccessToken);
-      thumbnailData = cached.data;
-      thumbnailMime = cached.mime;
+      // Only cache Google's small preview thumb for images — never the full Drive file
+      if (isImage && thumbnailLink) {
+        const cached = await cacheThumbnailFromLink(thumbnailLink, user.googleAccessToken);
+        thumbnailData = cached.data;
+        thumbnailMime = cached.mime;
+      }
 
-      await prisma.card.create({
-        data: {
-          profileId,
-          kind: 'image',
-          title: f.name || 'Sans titre',
-          url: '',
-          tags: [],
-          source: 'uploaded',
-          width: width ?? null,
-          height: height ?? null,
-          aspectRatio: aspectRatio ?? null,
-          file: {
-            create: {
-              mimeType: f.mimeType || 'image/jpeg',
-              filename: f.name || 'image',
-              data: null,
-              driveFileId: f.id,
-              thumbnailLink: f.thumbnailLink ?? null,
-              thumbnailData: thumbnailData ?? null,
-              thumbnailMime: thumbnailMime ?? null,
-              size: f.size ? Number(f.size) : null,
-              driveModifiedAt: f.modifiedTime ? new Date(f.modifiedTime) : null,
+      try {
+        await prisma.card.create({
+          data: {
+            profileId,
+            kind: 'image',
+            title: name,
+            url: '',
+            tags: pathTags,
+            source: ItemSource.drive,
+            width: isImage ? width ?? null : null,
+            height: isImage ? height ?? null : null,
+            aspectRatio: aspectRatio ?? null,
+            file: {
+              create: {
+                mimeType: mime,
+                filename: name,
+                data: null,
+                driveFileId,
+                thumbnailLink,
+                thumbnailData: thumbnailData ?? null,
+                thumbnailMime: thumbnailMime ?? null,
+                size,
+                driveModifiedAt: modifiedTime,
+              },
             },
           },
+        });
+        known.add(driveFileId);
+        imported += 1;
+      } catch (err) {
+        // Unique / race: treat as already imported
+        const again = await prisma.cardFile.findFirst({
+          where: { driveFileId, card: { profileId } },
+          select: { id: true, cardId: true },
+        });
+        if (again) {
+          known.add(driveFileId);
+          await prisma.card.update({
+            where: { id: again.cardId },
+            data: { tags: pathTags },
+          });
+          skipped += 1;
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    return finish(
+      {
+        imported,
+        scanned,
+        skipped,
+        folderCount: syncFolders.length,
+      },
+      imported > 0
+        ? `Terminé — ${imported} importé${imported > 1 ? 's' : ''}`
+        : 'Terminé — rien de nouveau'
+    );
+  } catch (err) {
+    if ((err as { cancelled?: boolean }).cancelled || signal.aborted) {
+      return finish(
+        {
+          imported,
+          scanned,
+          skipped,
+          folderCount,
+          cancelled: true,
         },
-      });
-      known.add(f.id);
-      imported += 1;
+        imported > 0
+          ? `Sync interrompue — ${imported} importé${imported > 1 ? 's' : ''}`
+          : 'Sync interrompue'
+      );
+    }
+    throw err;
+  } finally {
+    if (syncAbortControllers.get(key) === ac) {
+      syncAbortControllers.delete(key);
     }
   }
-
-  await prisma.user.update({
-    where: { id: userId },
-    data: { googleLastSyncAt: new Date() },
-  });
-
-  return { imported, scanned, skipped };
 }
 
 export const googleStorage: StorageAdapter = {
@@ -394,7 +790,7 @@ export const googleStorage: StorageAdapter = {
     return {
       mimeType: f.mimeType || file.mimetype,
       filename: f.name || file.originalname,
-      size: f.size ? Number(f.size) : file.size,
+      size: toDbFileSize(f.size ?? file.size) ?? BigInt(file.size),
       driveFileId: f.id,
       thumbnailLink: f.thumbnailLink ?? undefined,
       thumbnailData,
@@ -410,6 +806,24 @@ export const googleStorage: StorageAdapter = {
     if (!meta.driveFileId) return null;
 
     const drive = await getAuthedDrive(userId);
+    const exportSpec = GOOGLE_EXPORT_MAP[meta.mimeType];
+
+    if (exportSpec) {
+      const res = await drive.files.export(
+        { fileId: meta.driveFileId, mimeType: exportSpec.mime },
+        { responseType: 'arraybuffer' }
+      );
+      return {
+        buffer: Buffer.from(res.data as ArrayBuffer),
+        mimeType: exportSpec.mime,
+        filenameExt: exportSpec.ext,
+      };
+    }
+
+    if (meta.mimeType.startsWith('application/vnd.google-apps.')) {
+      return null;
+    }
+
     const res = await drive.files.get(
       { fileId: meta.driveFileId, alt: 'media', supportsAllDrives: true },
       { responseType: 'arraybuffer' }

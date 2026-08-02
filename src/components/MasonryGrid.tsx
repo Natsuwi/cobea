@@ -1,10 +1,13 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { ImageItem, isNoteItem, isMoodboardItem } from '../types';
 import { ImageCard } from './ImageCard';
 import { NoteCard } from './NoteCard';
 import { MoodboardCard } from './MoodboardCard';
-import { Sparkles, UploadCloud } from 'lucide-react';
+import { Loader2, Sparkles, UploadCloud } from 'lucide-react';
+
+/** How many cards to mount initially / per scroll page */
+const PAGE_SIZE = 24;
 
 interface MasonryGridProps {
   images: ImageItem[];
@@ -86,16 +89,46 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
   onDragStartItem,
   onDragEndItem,
 }) => {
+  const listKey = useMemo(() => images.map((i) => i.id).join('\0'), [images]);
+  const [visibleCount, setVisibleCount] = useState(() =>
+    Math.min(PAGE_SIZE, images.length)
+  );
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setVisibleCount(Math.min(PAGE_SIZE, images.length));
+  }, [listKey, images.length]);
+
+  const visibleImages = useMemo(
+    () => images.slice(0, visibleCount),
+    [images, visibleCount]
+  );
+  const hasMore = visibleCount < images.length;
+
+  useEffect(() => {
+    if (!hasMore) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        setVisibleCount((prev) => Math.min(prev + PAGE_SIZE, images.length));
+      },
+      { root: null, rootMargin: '600px 0px', threshold: 0 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMore, images.length, visibleCount]);
+
   const columns = useMemo(() => {
     const count = columnCountOverride || 4;
     const cols: ImageItem[][] = Array.from({ length: count }, () => []);
-
-    images.forEach((img, idx) => {
+    visibleImages.forEach((img, idx) => {
       cols[idx % count].push(img);
     });
-
     return cols;
-  }, [images, columnCountOverride]);
+  }, [visibleImages, columnCountOverride]);
 
   if (images.length === 0) {
     return (
@@ -134,7 +167,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
         {!columnCountOverride ? (
           <div className="contents sm:hidden">
             {renderColumn(
-              images,
+              visibleImages,
               allItems,
               onSelectImage,
               onToggleFavorite,
@@ -164,6 +197,19 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
           </div>
         ))}
       </div>
+
+      {hasMore ? (
+        <div
+          ref={sentinelRef}
+          className="flex items-center justify-center gap-2 py-10 text-xs text-zinc-400"
+          aria-hidden
+        >
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          <span>
+            {visibleCount} / {images.length}
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 };

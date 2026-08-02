@@ -22,7 +22,7 @@ interface BottomNavbarProps {
   isFavoriteFilterActive: boolean;
   onToggleFavoriteFilter: () => void;
   searchQuery: string;
-  onSearchChange: (query: string) => void;
+  onSearchChange: (query: string | ((prev: string) => string)) => void;
   activeTagFilters: string[];
   onCommitTagFilter: (tag: string) => void;
   onRemoveTagFilter: (tag: string) => void;
@@ -33,6 +33,16 @@ interface BottomNavbarProps {
   totalImagesCount: number;
   /** Slide navbar down when card selection dock is active */
   hiddenForSelection?: boolean;
+  /** Disable type-to-search (e.g. while a modal is open) */
+  typeToSearchEnabled?: boolean;
+}
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (target.isContentEditable) return true;
+  return Boolean(target.closest('[contenteditable="true"], input, textarea, select'));
 }
 
 export const BottomNavbar: React.FC<BottomNavbarProps> = ({
@@ -52,15 +62,54 @@ export const BottomNavbar: React.FC<BottomNavbarProps> = ({
   onChangeColumnCount,
   totalImagesCount,
   hiddenForSelection = false,
+  typeToSearchEnabled = true,
 }) => {
   const searchInputRef = React.useRef<HTMLInputElement>(null);
   const isSearchOpen = searchQuery.length > 0;
 
   React.useEffect(() => {
-    if (isSearchOpen && searchInputRef.current && searchQuery.length > 0) {
-      searchInputRef.current.focus();
+    if (isSearchOpen) {
+      searchInputRef.current?.focus();
     }
-  }, [isSearchOpen, searchQuery]);
+  }, [isSearchOpen]);
+
+  /** Type-to-search from the main gallery view */
+  React.useEffect(() => {
+    if (zenMode || hiddenForSelection || !typeToSearchEnabled) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+
+      if (e.key === 'Escape') {
+        if (isSearchOpen) {
+          onSearchChange('');
+          e.preventDefault();
+        }
+        return;
+      }
+
+      if (e.key === 'Backspace' && isSearchOpen) {
+        e.preventDefault();
+        onSearchChange((prev) => (prev.length > 0 ? prev.slice(0, -1) : prev));
+        return;
+      }
+
+      // Printable character → expand search and append
+      if (e.key.length === 1) {
+        e.preventDefault();
+        onSearchChange((prev) => prev + e.key);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [zenMode, hiddenForSelection, typeToSearchEnabled, isSearchOpen, onSearchChange]);
+
+  const closeSearch = () => {
+    onSearchChange('');
+  };
 
   const tryCommitTagFromQuery = () => {
     const trimmed = searchQuery.trim();
@@ -141,8 +190,8 @@ export const BottomNavbar: React.FC<BottomNavbarProps> = ({
               initial={{ width: 0, opacity: 0 }}
               animate={{ width: 220, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.3, ease: 'easeInOut' }}
               className="relative flex items-center overflow-hidden"
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
             >
               <input
                 ref={searchInputRef}
@@ -159,10 +208,8 @@ export const BottomNavbar: React.FC<BottomNavbarProps> = ({
                     onRemoveTagFilter(activeTagFilters[activeTagFilters.length - 1]);
                     e.preventDefault();
                   } else if (e.key === 'Escape') {
-                    if (searchQuery) {
-                      onSearchChange('');
-                      e.preventDefault();
-                    }
+                    e.preventDefault();
+                    closeSearch();
                   }
                 }}
                 className="w-full pl-8 pr-7 py-1.5 text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-full focus:outline-none"
@@ -184,7 +231,7 @@ export const BottomNavbar: React.FC<BottomNavbarProps> = ({
         <button
           type="button"
           onClick={() => {
-            if (searchQuery) onSearchChange('');
+            if (isSearchOpen) closeSearch();
           }}
           className={`p-2.5 rounded-full transition-all duration-200 ${
             isSearchOpen

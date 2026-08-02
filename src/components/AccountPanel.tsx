@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { motion } from 'motion/react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
+  ChevronDown,
   FolderOpen,
   HardDrive,
   Link2,
   LogOut,
   RefreshCw,
+  Square,
   Unlink,
   Upload,
   X,
@@ -16,6 +18,20 @@ import { api, type DriveFolderRef, type StorageState } from '../lib/api';
 import { CobeaBrand } from './CobeaBrand';
 import { DriveFolderPicker } from './DriveFolderPicker';
 import { GoogleOAuthGuide } from './GoogleOAuthGuide';
+
+type DriveUsage = {
+  day: string;
+  requests: number;
+  units: number;
+  dailyLimitUnits: number;
+  percentUsed: number;
+};
+
+function formatUnits(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}k`;
+  return String(n);
+}
 
 interface AccountPanelProps {
   profile: UserProfile;
@@ -54,10 +70,33 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
   const [clientSecret, setClientSecret] = useState('');
   const [setupOpen, setSetupOpen] = useState(false);
   const [pickerMode, setPickerMode] = useState<'upload' | 'sync' | null>(null);
+  /** Drive options (folders / sync / disconnect) — collapsed by default */
+  const [driveDetailsOpen, setDriveDetailsOpen] = useState(false);
+  const [driveUsage, setDriveUsage] = useState<DriveUsage | null>(null);
+  const [syncProgress, setSyncProgress] = useState<{
+    percent: number;
+    message: string;
+    current?: number;
+    total?: number;
+  } | null>(null);
+  const syncAbortRef = useRef<AbortController | null>(null);
   const [redirectUri, setRedirectUri] = useState(
     `${window.location.origin}/api/auth/google/callback`
   );
   const googleOn = storageMode === 'google' || setupOpen;
+
+  const refreshDriveUsage = useCallback(async () => {
+    if (!googleConnected) {
+      setDriveUsage(null);
+      return;
+    }
+    try {
+      const { usage } = await api.getDriveUsage();
+      setDriveUsage(usage);
+    } catch {
+      /* ignore */
+    }
+  }, [googleConnected]);
 
   useEffect(() => {
     if (storageMode === 'google') setSetupOpen(false);
@@ -71,6 +110,10 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
       })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    void refreshDriveUsage();
+  }, [refreshDriveUsage]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -213,20 +256,54 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
   const runSync = async () => {
     setBusy(true);
     setMessage(null);
+    setSyncProgress({ percent: 0, message: 'Démarrage…' });
+    const ac = new AbortController();
+    syncAbortRef.current = ac;
     try {
-      const result = await api.syncGoogleDrive();
+      const result = await api.syncGoogleDriveWithProgress((p) => {
+        setSyncProgress({
+          percent: p.percent,
+          message: p.message,
+          current: p.current,
+          total: p.total,
+        });
+      }, ac.signal);
       onStorageChange({ googleLastSyncAt: result.googleLastSyncAt });
       onSynced?.();
-      setMessage(
-        result.imported > 0
-          ? `Sync : ${result.imported} importée${result.imported > 1 ? 's' : ''} (${result.scanned} scannées)`
-          : `Sync terminée — rien de nouveau (${result.scanned} scannées)`
-      );
+      await refreshDriveUsage();
+      if (result.cancelled) {
+        setMessage(
+          result.imported > 0
+            ? `Sync interrompue — ${result.imported} importé${result.imported > 1 ? 's' : ''} conservé${result.imported > 1 ? 's' : ''}`
+            : 'Sync interrompue'
+        );
+      } else {
+        setMessage(
+          result.imported > 0
+            ? `Sync : ${result.imported} importé${result.imported > 1 ? 's' : ''} (${result.scanned} scannés)`
+            : result.folderCount === 0
+              ? 'Aucun dossier à synchroniser — choisis-en un d’abord'
+              : result.scanned === 0
+                ? 'Dossier vide sur Drive (0 fichier). Si tu as récemment supprimé des cards, restaure les fichiers depuis la corbeille Google Drive.'
+                : `Sync terminée — rien de nouveau (${result.scanned} scannés)`
+        );
+      }
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Erreur de sync');
+      if (ac.signal.aborted) {
+        setMessage('Sync interrompue');
+        onSynced?.();
+      } else {
+        setMessage(err instanceof Error ? err.message : 'Erreur de sync');
+      }
     } finally {
+      syncAbortRef.current = null;
+      setSyncProgress(null);
       setBusy(false);
     }
+  };
+
+  const cancelSync = () => {
+    void api.cancelGoogleDriveSync().catch(() => undefined);
   };
 
   const lastSyncLabel = googleLastSyncAt
@@ -400,77 +477,179 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
 
                     {googleConfigured && googleConnected && (
                       <div className="space-y-3">
-                        <p className="text-xs text-amber-700 dark:text-amber-300/90 bg-amber-50 dark:bg-amber-500/10 rounded-xl px-3 py-2">
-                          Nouveau scope Drive : si la liste des dossiers échoue,
-                          déconnecte puis reconnecte Google.
-                        </p>
-
-                        <div className="space-y-2">
-                          <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                            Upload (nouvelles cards)
-                          </p>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => setPickerMode('upload')}
-                            className="flex items-center gap-2 w-full rounded-xl border border-zinc-200 dark:border-white/10 px-3 py-2.5 text-sm text-left hover:bg-zinc-50 dark:hover:bg-white/5 disabled:opacity-50"
-                          >
-                            <Upload className="w-4 h-4 text-zinc-500 shrink-0" />
-                            <span className="flex-1 truncate text-zinc-800 dark:text-zinc-100">
-                              {googleUploadFolderName || 'Choisir un dossier…'}
-                            </span>
-                          </button>
-                          {!googleUploadFolderId && (
-                            <p className="text-xs text-zinc-500">
-                              Sans dossier, les uploads vont à la racine de ton Drive.
+                        {driveUsage && (
+                          <div className="rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-zinc-950/40 px-3 py-2.5 space-y-1.5">
+                            <div className="flex items-center justify-between gap-2 text-xs">
+                              <span className="font-medium text-zinc-700 dark:text-zinc-200">
+                                API Drive aujourd’hui
+                              </span>
+                              <span className="tabular-nums text-zinc-500">
+                                {driveUsage.requests.toLocaleString('fr-FR')} appel
+                                {driveUsage.requests !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  driveUsage.percentUsed >= 80
+                                    ? 'bg-rose-500'
+                                    : driveUsage.percentUsed >= 50
+                                      ? 'bg-amber-500'
+                                      : 'bg-emerald-500'
+                                }`}
+                                style={{
+                                  width: `${Math.min(100, Math.max(driveUsage.percentUsed, driveUsage.units > 0 ? 0.5 : 0))}%`,
+                                }}
+                              />
+                            </div>
+                            <p className="text-[11px] text-zinc-500 leading-snug">
+                              {formatUnits(driveUsage.units)} /{' '}
+                              {formatUnits(driveUsage.dailyLimitUnits)} unités (
+                              {driveUsage.percentUsed < 0.01 && driveUsage.units > 0
+                                ? '<0,01'
+                                : driveUsage.percentUsed.toLocaleString('fr-FR', {
+                                    maximumFractionDigits: 2,
+                                  })}
+                              % de la limite gratuite / jour)
                             </p>
-                          )}
-                        </div>
-
-                        <div className="space-y-2">
-                          <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                            Synchroniser
-                          </p>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => setPickerMode('sync')}
-                            className="flex items-center gap-2 w-full rounded-xl border border-zinc-200 dark:border-white/10 px-3 py-2.5 text-sm text-left hover:bg-zinc-50 dark:hover:bg-white/5 disabled:opacity-50"
-                          >
-                            <FolderOpen className="w-4 h-4 text-zinc-500 shrink-0" />
-                            <span className="flex-1 truncate text-zinc-800 dark:text-zinc-100">
-                              {googleSyncFolders.length
-                                ? `${googleSyncFolders.length} dossier${
-                                    googleSyncFolders.length > 1 ? 's' : ''
-                                  } — ${googleSyncFolders.map((f) => f.name).join(', ')}`
-                                : 'Choisir les dossiers…'}
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy || googleSyncFolders.length === 0}
-                            onClick={() => void runSync()}
-                            className="flex items-center justify-center gap-2 w-full rounded-xl bg-zinc-900 dark:bg-amber-500 text-white dark:text-zinc-950 py-2.5 text-sm font-medium disabled:opacity-40"
-                          >
-                            <RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} />
-                            Synchroniser maintenant
-                          </button>
-                          {lastSyncLabel && (
-                            <p className="text-xs text-zinc-500 text-center">
-                              Dernière sync : {lastSyncLabel}
-                            </p>
-                          )}
-                        </div>
+                          </div>
+                        )}
 
                         <button
                           type="button"
-                          disabled={busy}
-                          onClick={disconnectGoogle}
-                          className="flex items-center justify-center gap-2 w-full rounded-xl border border-zinc-200 dark:border-white/10 py-2.5 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-white/5 disabled:opacity-50"
+                          onClick={() => setDriveDetailsOpen((o) => !o)}
+                          className="flex items-center justify-between w-full rounded-xl border border-zinc-200 dark:border-white/10 px-3 py-2.5 text-sm font-medium text-zinc-800 dark:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-white/5"
+                          aria-expanded={driveDetailsOpen}
                         >
-                          <Unlink className="w-4 h-4" />
-                          Déconnecter Google
+                          <span>Options Drive</span>
+                          <ChevronDown
+                            className={`w-4 h-4 text-zinc-400 transition-transform ${
+                              driveDetailsOpen ? 'rotate-180' : ''
+                            }`}
+                          />
                         </button>
+
+                        <AnimatePresence initial={false}>
+                          {driveDetailsOpen && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                              className="overflow-hidden"
+                            >
+                              <div className="space-y-3 pt-1">
+                                <p className="text-xs text-amber-700 dark:text-amber-300/90 bg-amber-50 dark:bg-amber-500/10 rounded-xl px-3 py-2">
+                                  Nouveau scope Drive : si la liste des dossiers échoue,
+                                  déconnecte puis reconnecte Google.
+                                </p>
+
+                                <div className="space-y-2">
+                                  <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                                    Upload (nouvelles cards)
+                                  </p>
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => setPickerMode('upload')}
+                                    className="flex items-center gap-2 w-full rounded-xl border border-zinc-200 dark:border-white/10 px-3 py-2.5 text-sm text-left hover:bg-zinc-50 dark:hover:bg-white/5 disabled:opacity-50"
+                                  >
+                                    <Upload className="w-4 h-4 text-zinc-500 shrink-0" />
+                                    <span className="flex-1 truncate text-zinc-800 dark:text-zinc-100">
+                                      {googleUploadFolderName || 'Choisir un dossier…'}
+                                    </span>
+                                  </button>
+                                  {!googleUploadFolderId && (
+                                    <p className="text-xs text-zinc-500">
+                                      Sans dossier, les uploads vont à la racine de ton Drive.
+                                    </p>
+                                  )}
+                                </div>
+
+                                <div className="space-y-2">
+                                  <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                                    Synchroniser
+                                  </p>
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => setPickerMode('sync')}
+                                    className="flex items-center gap-2 w-full rounded-xl border border-zinc-200 dark:border-white/10 px-3 py-2.5 text-sm text-left hover:bg-zinc-50 dark:hover:bg-white/5 disabled:opacity-50"
+                                  >
+                                    <FolderOpen className="w-4 h-4 text-zinc-500 shrink-0" />
+                                    <span className="flex-1 truncate text-zinc-800 dark:text-zinc-100">
+                                      {googleSyncFolders.length
+                                        ? `${googleSyncFolders.length} dossier${
+                                            googleSyncFolders.length > 1 ? 's' : ''
+                                          } — ${googleSyncFolders.map((f) => f.name).join(', ')}`
+                                        : 'Choisir les dossiers…'}
+                                    </span>
+                                  </button>
+                                  <div className="flex gap-2">
+                                    <button
+                                      type="button"
+                                      disabled={busy || googleSyncFolders.length === 0}
+                                      onClick={() => void runSync()}
+                                      className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-zinc-900 dark:bg-amber-500 text-white dark:text-zinc-950 py-2.5 text-sm font-medium disabled:opacity-40"
+                                    >
+                                      <RefreshCw
+                                        className={`w-4 h-4 ${syncProgress ? 'animate-spin' : ''}`}
+                                      />
+                                      {syncProgress
+                                        ? `Sync… ${Math.round(syncProgress.percent)}%`
+                                        : 'Synchroniser maintenant'}
+                                    </button>
+                                    {syncProgress && (
+                                      <button
+                                        type="button"
+                                        onClick={cancelSync}
+                                        className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-rose-300 dark:border-rose-500/40 bg-rose-50 dark:bg-rose-500/10 px-3 py-2.5 text-sm font-medium text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-500/20"
+                                        title="Interrompre la synchronisation"
+                                      >
+                                        <Square className="w-3.5 h-3.5 fill-current" />
+                                        Stop
+                                      </button>
+                                    )}
+                                  </div>
+                                  {syncProgress && (
+                                    <div className="space-y-1.5">
+                                      <div className="h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+                                        <div
+                                          className="h-full rounded-full bg-amber-500 transition-[width] duration-300 ease-out"
+                                          style={{
+                                            width: `${Math.min(100, Math.max(2, syncProgress.percent))}%`,
+                                          }}
+                                        />
+                                      </div>
+                                      <p className="text-[11px] text-zinc-500 truncate text-center">
+                                        {syncProgress.current != null &&
+                                        syncProgress.total != null
+                                          ? `${syncProgress.current}/${syncProgress.total} — `
+                                          : ''}
+                                        {syncProgress.message}
+                                      </p>
+                                    </div>
+                                  )}
+                                  {lastSyncLabel && !syncProgress && (
+                                    <p className="text-xs text-zinc-500 text-center">
+                                      Dernière sync : {lastSyncLabel}
+                                    </p>
+                                  )}
+                                </div>
+
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={disconnectGoogle}
+                                  className="flex items-center justify-center gap-2 w-full rounded-xl border border-zinc-200 dark:border-white/10 py-2.5 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-white/5 disabled:opacity-50"
+                                >
+                                  <Unlink className="w-4 h-4" />
+                                  Déconnecter Google
+                                </button>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
                     )}
                   </div>

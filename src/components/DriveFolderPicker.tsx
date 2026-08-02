@@ -87,7 +87,7 @@ export const DriveFolderPicker: React.FC<DriveFolderPickerProps> = ({
             <p className="text-xs text-zinc-500 mt-0.5">
               {mode === 'upload'
                 ? 'Les nouvelles cards iront dans ce dossier Drive.'
-                : 'Coche les dossiers dont les images seront importées.'}
+                : 'Coche un dossier : sous-dossiers + fichiers inclus ; chaque dossier du chemin devient un tag.'}
             </p>
           </div>
           <button

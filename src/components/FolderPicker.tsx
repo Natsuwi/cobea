@@ -83,7 +83,7 @@ export const FolderPicker: React.FC<FolderPickerProps> = ({
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 8, scale: 0.96 }}
           transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-          className="absolute bottom-[calc(100%+12px)] left-1/2 -translate-x-1/2 w-[280px] max-h-[360px] overflow-y-auto no-scrollbar rounded-2xl bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-black/8 dark:border-white/10 shadow-2xl shadow-black/15 dark:shadow-black/50 p-2 z-50"
+          className="absolute bottom-[calc(100%+12px)] left-1/2 -translate-x-1/2 w-[280px] max-h-[360px] overflow-y-auto no-scrollbar rounded-2xl bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-black/8 dark:border-white/10 shadow-2xl shadow-black/15 dark:shadow-black/50 p-2 z-[80]"
         >
           <p className="px-2.5 pt-1.5 pb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
             {assignMode ? 'Choisir un dossier' : 'Dossiers'}

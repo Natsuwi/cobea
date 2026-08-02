@@ -5,6 +5,7 @@ import { ImageItem, isNoteItem } from '../types';
 import { useCardDragPreview } from '../hooks/useCardDragPreview';
 import { CardDragGhost } from './CardDragGhost';
 import { MarkdownPreview } from './MarkdownPreview';
+import { FileCardPreview, isDisplayableImageItem } from './FileCardPreview';
 
 interface MoodboardCardProps {
   item: ImageItem;
@@ -76,12 +77,19 @@ export const MoodboardCard: React.FC<MoodboardCardProps> = ({
                           <div className="w-full h-full p-1 bg-white dark:bg-zinc-900 text-[5px] overflow-hidden">
                             <MarkdownPreview content={ref.markdown || ''} />
                           </div>
-                        ) : (
+                        ) : isDisplayableImageItem(ref) && ref.url ? (
                           <img
                             src={ref.url}
                             alt=""
                             className="w-full h-full object-cover"
                             draggable={false}
+                          />
+                        ) : (
+                          <FileCardPreview
+                            title={ref.title}
+                            mimeType={ref.mimeType}
+                            filename={ref.filename}
+                            size="sm"
                           />
                         )}
                       </div>
@@ -150,12 +158,19 @@ export const MoodboardCard: React.FC<MoodboardCardProps> = ({
                         <div className="w-full h-full p-0.5 bg-white dark:bg-zinc-900 text-[4px] overflow-hidden">
                           <MarkdownPreview content={ref.markdown || ''} />
                         </div>
-                      ) : (
+                      ) : isDisplayableImageItem(ref) && ref.url ? (
                         <img
                           src={ref.url}
                           alt=""
                           className="w-full h-full object-cover"
                           draggable={false}
+                        />
+                      ) : (
+                        <FileCardPreview
+                          title={ref.title}
+                          mimeType={ref.mimeType}
+                          filename={ref.filename}
+                          size="sm"
                         />
                       )}
                     </div>

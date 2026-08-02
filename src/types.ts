@@ -30,7 +30,7 @@ export interface ImageItem {
   isFavorite?: boolean;
   width?: number;
   height?: number;
-  source?: 'default' | 'uploaded' | 'url' | 'note';
+  source?: 'default' | 'uploaded' | 'url' | 'note' | 'drive';
   /** Defaults to 'image' for legacy items */
   kind?: ItemKind;
   /** Markdown body when kind === 'note' */
@@ -43,6 +43,16 @@ export interface ImageItem {
   drawingData?: string;
   /** Card layouts when kind === 'moodboard' */
   moodboardPlacements?: MoodboardPlacement[];
+  /** MIME type when a file is attached */
+  mimeType?: string;
+  /** Original filename */
+  filename?: string;
+  hasFile?: boolean;
+  /** True when file bytes are in Postgres (not Drive-only) */
+  hasLocalFile?: boolean;
+  driveFileId?: string;
+  /** Google Drive viewer URL for Drive-backed cards */
+  driveUrl?: string;
 }
 
 export type ThemeMode = 'light' | 'dark';
