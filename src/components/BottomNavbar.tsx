@@ -1,26 +1,9 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import {
-  Plus,
-  Sun,
-  Moon,
-  Heart,
-  Grid2X2,
-  Grid3X3,
-  Search,
-  Eye,
-  X,
-  Sparkles,
-  LayoutGrid,
-} from 'lucide-react';
-import { ThemeMode } from '../types';
+import { Plus, Search, Eye, X, Sparkles } from 'lucide-react';
 
 interface BottomNavbarProps {
-  theme: ThemeMode;
-  onToggleTheme: () => void;
   onOpenUpload: () => void;
-  isFavoriteFilterActive: boolean;
-  onToggleFavoriteFilter: () => void;
   searchQuery: string;
   onSearchChange: (query: string | ((prev: string) => string)) => void;
   activeTagFilters: string[];
@@ -28,8 +11,6 @@ interface BottomNavbarProps {
   onRemoveTagFilter: (tag: string) => void;
   zenMode: boolean;
   onToggleZenMode: () => void;
-  columnCount: number;
-  onChangeColumnCount: (count: number) => void;
   totalImagesCount: number;
   /** Slide navbar down when card selection dock is active */
   hiddenForSelection?: boolean;
@@ -46,11 +27,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 export const BottomNavbar: React.FC<BottomNavbarProps> = ({
-  theme,
-  onToggleTheme,
   onOpenUpload,
-  isFavoriteFilterActive,
-  onToggleFavoriteFilter,
   searchQuery,
   onSearchChange,
   activeTagFilters,
@@ -58,8 +35,6 @@ export const BottomNavbar: React.FC<BottomNavbarProps> = ({
   onRemoveTagFilter,
   zenMode,
   onToggleZenMode,
-  columnCount,
-  onChangeColumnCount,
   totalImagesCount,
   hiddenForSelection = false,
   typeToSearchEnabled = true,
@@ -96,7 +71,6 @@ export const BottomNavbar: React.FC<BottomNavbarProps> = ({
         return;
       }
 
-      // Printable character → expand search and append
       if (e.key.length === 1) {
         e.preventDefault();
         onSearchChange((prev) => prev + e.key);
@@ -147,7 +121,6 @@ export const BottomNavbar: React.FC<BottomNavbarProps> = ({
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
       style={{ pointerEvents: hiddenForSelection ? 'none' : 'auto' }}
     >
-      {/* Active tag filter chips */}
       <AnimatePresence>
         {activeTagFilters.length > 0 && (
           <motion.div
@@ -257,59 +230,11 @@ export const BottomNavbar: React.FC<BottomNavbarProps> = ({
 
         <button
           type="button"
-          onClick={onToggleFavoriteFilter}
-          className={`p-2.5 rounded-full transition-all duration-200 ${
-            isFavoriteFilterActive
-              ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
-              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800/60'
-          }`}
-          title={isFavoriteFilterActive ? 'Afficher toutes les images' : 'Afficher seulement les favoris'}
-        >
-          <Heart
-            className={`w-4 h-4 stroke-[1.75] ${
-              isFavoriteFilterActive ? 'fill-current' : ''
-            }`}
-          />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            const nextCols = columnCount >= 5 ? 2 : columnCount + 1;
-            onChangeColumnCount(nextCols);
-          }}
-          className="p-2.5 rounded-full text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 transition-all duration-200 hidden sm:flex items-center"
-          title={`Changer le nombre de colonnes (actuel: ${columnCount})`}
-        >
-          {columnCount <= 2 ? (
-            <Grid2X2 className="w-4 h-4 stroke-[1.75]" />
-          ) : columnCount === 3 ? (
-            <Grid3X3 className="w-4 h-4 stroke-[1.75]" />
-          ) : (
-            <LayoutGrid className="w-4 h-4 stroke-[1.75]" />
-          )}
-        </button>
-
-        <button
-          type="button"
           onClick={onToggleZenMode}
           className="p-2.5 rounded-full text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 transition-all duration-200"
           title="Mode Zen (Masquer l'interface)"
         >
           <Eye className="w-4 h-4 stroke-[1.75]" />
-        </button>
-
-        <button
-          type="button"
-          onClick={onToggleTheme}
-          className="p-2.5 rounded-full text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 transition-all duration-300"
-          title={theme === 'dark' ? 'Mode clair' : 'Mode sombre'}
-        >
-          {theme === 'dark' ? (
-            <Sun className="w-4 h-4 stroke-[1.75] text-amber-400" />
-          ) : (
-            <Moon className="w-4 h-4 stroke-[1.75]" />
-          )}
         </button>
 
         <div className="hidden md:flex items-center px-2.5 py-1 text-[11px] font-medium text-zinc-400 dark:text-zinc-500 border-l border-zinc-200 dark:border-zinc-800 ml-0.5">

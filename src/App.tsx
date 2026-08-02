@@ -30,6 +30,7 @@ import { api, dataUrlToBlob, getToken, setToken, type DriveFolderRef, type Stora
 import { useAppUpdate } from './hooks/useAppUpdate';
 
 const THEME_KEY = 'zen_gallery_theme_v1';
+const COLUMNS_KEY = 'zen_gallery_columns_v1';
 
 /** Prevents React Strict Mode double-mount from running bootstrap/sync twice. */
 let bootstrapStarted = false;
@@ -97,7 +98,11 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTagFilters, setActiveTagFilters] = useState<string[]>([]);
   const [zenMode, setZenMode] = useState(false);
-  const [columnCount, setColumnCount] = useState<number>(4);
+  const [columnCount, setColumnCount] = useState<number>(() => {
+    const saved = localStorage.getItem(COLUMNS_KEY);
+    const n = saved ? Number(saved) : 5;
+    return n >= 2 && n <= 6 ? n : 5;
+  });
 
   const handleToggleZenMode = useCallback(async () => {
     if (zenMode) {
@@ -277,6 +282,10 @@ export default function App() {
       void api.updateProfile({ theme }).catch(() => undefined);
     }
   }, [theme, authed]);
+
+  useEffect(() => {
+    localStorage.setItem(COLUMNS_KEY, String(columnCount));
+  }, [columnCount]);
 
   useEffect(() => {
     if (!authed) return;
@@ -651,10 +660,6 @@ export default function App() {
     [addToSelectionDock, images]
   );
 
-  const handleToggleTheme = () => {
-    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
-  };
-
   const handleToggleFavorite = useCallback(
     async (id: string, e: React.MouseEvent) => {
       e.stopPropagation();
@@ -859,6 +864,10 @@ export default function App() {
         {isAccountOpen && (
           <AccountPanel
             profile={profile}
+            theme={theme}
+            onThemeChange={setTheme}
+            columnCount={columnCount}
+            onColumnCountChange={setColumnCount}
             googleConnected={googleConnected}
             storageMode={storageMode}
             googleConfigured={googleConfigured}
@@ -931,11 +940,7 @@ export default function App() {
       </main>
 
       <BottomNavbar
-        theme={theme}
-        onToggleTheme={handleToggleTheme}
         onOpenUpload={() => setIsAddModalOpen(true)}
-        isFavoriteFilterActive={isFavoriteFilterActive}
-        onToggleFavoriteFilter={() => setIsFavoriteFilterActive(!isFavoriteFilterActive)}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         activeTagFilters={activeTagFilters}
@@ -945,8 +950,6 @@ export default function App() {
         onRemoveTagFilter={removeTagFilter}
         zenMode={zenMode}
         onToggleZenMode={() => void handleToggleZenMode()}
-        columnCount={columnCount}
-        onChangeColumnCount={setColumnCount}
         totalImagesCount={filteredImages.length}
         hiddenForSelection={showSelectionDock}
         typeToSearchEnabled={!selectedImageId && !isAddModalOpen && !isAccountOpen}

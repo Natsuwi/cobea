@@ -122,7 +122,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
   }, [hasMore, images.length, visibleCount]);
 
   const columns = useMemo(() => {
-    const count = columnCountOverride || 4;
+    const count = columnCountOverride || 5;
     const cols: ImageItem[][] = Array.from({ length: count }, () => []);
     visibleImages.forEach((img, idx) => {
       cols[idx % count].push(img);

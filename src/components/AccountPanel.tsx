@@ -2,17 +2,20 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ChevronDown,
+  Columns3,
   FolderOpen,
   HardDrive,
   Link2,
   LogOut,
+  Moon,
   RefreshCw,
   Square,
+  Sun,
   Unlink,
   Upload,
   X,
 } from 'lucide-react';
-import { UserProfile } from '../types';
+import { ThemeMode, UserProfile } from '../types';
 import { ACCOUNT_SWITCHER_BG } from '../data/profiles';
 import { api, type DriveFolderRef, type StorageState } from '../lib/api';
 import { CobeaBrand } from './CobeaBrand';
@@ -35,6 +38,10 @@ function formatUnits(n: number): string {
 
 interface AccountPanelProps {
   profile: UserProfile;
+  theme: ThemeMode;
+  onThemeChange: (theme: ThemeMode) => void;
+  columnCount: number;
+  onColumnCountChange: (count: number) => void;
   googleConnected: boolean;
   storageMode: 'standard' | 'google';
   googleConfigured: boolean;
@@ -51,6 +58,10 @@ interface AccountPanelProps {
 
 export const AccountPanel: React.FC<AccountPanelProps> = ({
   profile,
+  theme,
+  onThemeChange,
+  columnCount,
+  onColumnCountChange,
   googleConnected,
   storageMode,
   googleConfigured,
@@ -382,6 +393,81 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                   <p className="text-sm text-zinc-500 mt-1">Paramètres du compte</p>
                 </div>
               </div>
+
+              <section
+                aria-label="Apparence"
+                className="rounded-2xl border border-zinc-200 dark:border-white/15 bg-white dark:bg-zinc-900 shadow-sm p-4 space-y-4"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                  Apparence
+                </p>
+
+                <div className="flex items-center justify-between gap-3">
+                  <div className="space-y-0.5 min-w-0">
+                    <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Thème</p>
+                    <p className="text-xs text-zinc-500">Clair ou sombre</p>
+                  </div>
+                  <div className="flex shrink-0 rounded-full bg-zinc-100 dark:bg-zinc-800 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => onThemeChange('light')}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                        theme === 'light'
+                          ? 'bg-white text-zinc-900 shadow-sm'
+                          : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
+                      }`}
+                      title="Mode clair"
+                    >
+                      <Sun className="w-3.5 h-3.5" />
+                      Clair
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onThemeChange('dark')}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                        theme === 'dark'
+                          ? 'bg-zinc-700 text-zinc-50 shadow-sm'
+                          : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
+                      }`}
+                      title="Mode sombre"
+                    >
+                      <Moon className="w-3.5 h-3.5" />
+                      Sombre
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="space-y-0.5 min-w-0">
+                      <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                        <Columns3 className="w-3.5 h-3.5 text-zinc-400" />
+                        Colonnes
+                      </p>
+                      <p className="text-xs text-zinc-500">Cartes affichées par ligne</p>
+                    </div>
+                    <span className="text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+                      {columnCount}
+                    </span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    {[2, 3, 4, 5, 6].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => onColumnCountChange(n)}
+                        className={`flex-1 py-2 rounded-xl text-xs font-medium transition-colors ${
+                          columnCount === n
+                            ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-950'
+                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </section>
 
               <section
                 aria-label="Stockage"
