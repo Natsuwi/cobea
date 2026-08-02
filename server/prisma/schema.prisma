@@ -8,14 +8,25 @@ datasource db {
 }
 
 model User {
-  id                   String    @id @default(cuid())
-  email                String    @unique
-  passwordHash         String    @map("password_hash")
-  googleRefreshToken   String?   @map("google_refresh_token")
-  googleAccessToken    String?   @map("google_access_token")
-  googleTokenExpiry    DateTime? @map("google_token_expiry")
-  createdAt            DateTime  @default(now()) @map("created_at")
-  profile              Profile?
+  id                     String    @id @default(cuid())
+  email                  String    @unique
+  passwordHash           String    @map("password_hash")
+  /// 'standard' | 'google' — chosen in account settings
+  storageMode            String    @default("standard") @map("storage_mode")
+  /// Optional per-user OAuth app (fallback: server GOOGLE_CLIENT_*)
+  googleClientId         String?   @map("google_client_id")
+  googleClientSecret     String?   @map("google_client_secret")
+  googleRefreshToken     String?   @map("google_refresh_token")
+  googleAccessToken      String?   @map("google_access_token")
+  googleTokenExpiry      DateTime? @map("google_token_expiry")
+  /// Drive folder where new Cobea uploads are stored
+  googleUploadFolderId   String?   @map("google_upload_folder_id")
+  googleUploadFolderName String?   @map("google_upload_folder_name")
+  /// JSON: [{ id, name }] Drive folders to sync into the gallery
+  googleSyncFolders      Json?     @map("google_sync_folders")
+  googleLastSyncAt       DateTime? @map("google_last_sync_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  profile                Profile?
 
   @@map("users")
 }

@@ -1,17 +1,53 @@
 services:
   cobea-api:
-    build: ./server
+    build: /Volume1/Docker/cobea/server
     container_name: cobea-api
     restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://cobea:Drx2OtnGv%249Ed%2A@shared-postgres:5432/cobea_db
+      PORT: 3847
+      STORAGE_MODE: standard
+      # Origine publique (reverse proxy → :8083)
+      CORS_ORIGIN: https://cobea.tnas-movies.ddns.net
+      # Vide = URLs relatives /api/... (nginx du front proxy vers l’API)
+      PUBLIC_API_URL: ""
+      JWT_SECRET: ee4a43e1de3b3562c42711f757b0c0ed1a461c6ce775b740a7242b56aa09f447
+      GOOGLE_CLIENT_ID: ""
+      GOOGLE_CLIENT_SECRET: ""
+      GOOGLE_REDIRECT_URI: https://cobea.tnas-movies.ddns.net/api/auth/google/callback
     ports:
       - "3847:3847"
-    env_file:
-      - ./server/.env
     networks:
-      - waatch-net
+      - postgres-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  cobea-frontend:
+    build:
+      context: /Volume1/Docker/cobea
+      dockerfile: Dockerfile
+      args:
+        # Vide = même origine via nginx (/api proxy). Sinon URL publique de l’API.
+        VITE_API_URL: ""
+        # Change à chaque rebuild pour déclencher le bandeau de maj côté clients
+        VITE_APP_BUILD_ID: "${COBEA_BUILD_ID:-}"
+    container_name: cobea-frontend
+    restart: unless-stopped
+    ports:
+      - "8083:80"
+    networks:
+      - postgres-net
+    depends_on:
+      - cobea-api
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
-  waatch-net:
-    # Rename if your TerraMaster Postgres stack uses another network
+  postgres-net:
     external: true
-    name: waatch-net

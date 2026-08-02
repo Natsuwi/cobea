@@ -5,6 +5,8 @@ import { authRouter } from './routes/auth.js';
 import { foldersRouter } from './routes/folders.js';
 import { cardsRouter } from './routes/cards.js';
 
+import { isEnvGoogleConfigured } from './storage/google.js';
+
 const app = express();
 
 app.use(
@@ -17,13 +19,13 @@ app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, storageMode: env.STORAGE_MODE });
+  res.json({ ok: true });
 });
 
 app.get('/api/config', (_req, res) => {
   res.json({
-    storageMode: env.STORAGE_MODE,
-    googleConfigured: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
+    googleConfigured: isEnvGoogleConfigured(),
+    googleRedirectUri: env.GOOGLE_REDIRECT_URI,
   });
 });
 
@@ -44,5 +46,5 @@ app.use(
 );
 
 app.listen(env.PORT, '0.0.0.0', () => {
-  console.log(`Cobea API listening on :${env.PORT} (mode=${env.STORAGE_MODE})`);
+  console.log(`Cobea API listening on :${env.PORT}`);
 });

@@ -5,8 +5,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { serializeCard } from '../lib/serialize.js';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
-import { getStorage } from '../storage/index.js';
-import { env } from '../lib/env.js';
+import { getStorageForUser, resolveFileBuffer } from '../storage/index.js';
+import { googleStorage } from '../storage/google.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -75,11 +75,11 @@ cardsRouter.post('/', upload.single('file'), async (req: AuthRequest, res) => {
       }
     }
 
-    const storage = getStorage();
+    const storage = await getStorageForUser(req.auth!.userId);
     let fileMeta = null as Awaited<ReturnType<typeof storage.storeFile>> | null;
 
     if (req.file) {
-      if (env.STORAGE_MODE === 'google') {
+      if (storage.mode === 'google') {
         const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
         if (!user?.googleRefreshToken) {
           res.status(400).json({ error: 'Connect Google Drive first' });
@@ -222,12 +222,19 @@ cardsRouter.patch('/:id', upload.single('file'), async (req: AuthRequest, res) =
     }
 
     if (req.file) {
-      const storage = getStorage();
+      const storage = await getStorageForUser(req.auth!.userId);
+      if (storage.mode === 'google') {
+        const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+        if (!user?.googleRefreshToken) {
+          res.status(400).json({ error: 'Connect Google Drive first' });
+          return;
+        }
+      }
       const fileMeta = await storage.storeFile(req.auth!.userId, req.file, {
         title: (data.title as string) || existing.title,
       });
-      if (existing.file?.driveFileId && storage.deleteRemoteFile) {
-        await storage.deleteRemoteFile(req.auth!.userId, existing.file.driveFileId);
+      if (existing.file?.driveFileId) {
+        await googleStorage.deleteRemoteFile?.(req.auth!.userId, existing.file.driveFileId);
       }
       await prisma.cardFile.upsert({
         where: { cardId: existing.id },
@@ -278,9 +285,8 @@ cardsRouter.delete('/:id', async (req: AuthRequest, res) => {
     return;
   }
 
-  const storage = getStorage();
-  if (existing.file?.driveFileId && storage.deleteRemoteFile) {
-    await storage.deleteRemoteFile(req.auth!.userId, existing.file.driveFileId);
+  if (existing.file?.driveFileId) {
+    await googleStorage.deleteRemoteFile?.(req.auth!.userId, existing.file.driveFileId);
   }
 
   await prisma.card.delete({ where: { id: existing.id } });
@@ -358,8 +364,7 @@ async function serveCardMedia(
   }
 
   // kind === 'file'
-  const storage = getStorage();
-  const result = await storage.getFileBuffer(req.auth!.userId, {
+  const result = await resolveFileBuffer(req.auth!.userId, {
     data: card.file.data,
     driveFileId: card.file.driveFileId,
     mimeType: card.file.mimeType,

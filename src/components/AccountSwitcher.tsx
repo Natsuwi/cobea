@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Compass, Plus, X } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { UserProfile } from '../types';
 import { ACCOUNT_SWITCHER_BG } from '../data/profiles';
+import { CobeaBrand } from './CobeaBrand';
 
 interface AccountSwitcherProps {
   profiles: UserProfile[];
@@ -50,14 +51,10 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({
 
       <div className="relative z-10 flex flex-1 flex-col px-5 sm:px-8 pt-6 pb-[20vh]">
         <div className="flex items-center justify-between max-w-3xl w-full mx-auto">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500 to-rose-400 flex items-center justify-center text-white shadow-sm">
-              <Compass className="w-3.5 h-3.5" />
-            </div>
-            <span className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-              Haven
-            </span>
-          </div>
+          <CobeaBrand
+            markClassName="w-7 h-7 text-zinc-900 dark:text-zinc-50"
+            textClassName="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100"
+          />
 
           <button
             type="button"

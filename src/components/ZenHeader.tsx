@@ -1,8 +1,9 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Sparkles, Heart, Compass, Plus } from 'lucide-react';
+import { Sparkles, Heart, Plus } from 'lucide-react';
 import { Folder } from '../types';
 import { FolderIcon } from '../lib/folderIcons';
+import { CobeaBrand } from './CobeaBrand';
 
 interface ZenHeaderProps {
   selectedFolderId: string | null;
@@ -33,13 +34,11 @@ export const ZenHeader: React.FC<ZenHeaderProps> = ({
         transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
         className="glass-panel rounded-full px-4 py-2 flex items-center justify-between gap-4 md:gap-8 shadow-lg shadow-black/5 max-w-full overflow-x-auto no-scrollbar"
       >
-        <div className="flex items-center gap-2 px-2 py-1">
-          <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-amber-500 to-rose-400 flex items-center justify-center text-white shadow-sm">
-            <Compass className="w-3.5 h-3.5" />
-          </div>
-          <span className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-            Haven
-          </span>
+        <div className="flex items-center px-2 py-1">
+          <CobeaBrand
+            markClassName="w-6 h-6 text-zinc-900 dark:text-zinc-50"
+            textClassName="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100"
+          />
         </div>
 
         <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">

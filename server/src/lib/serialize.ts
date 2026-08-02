@@ -9,7 +9,7 @@ function mediaUrl(cardId: string, kind: 'file' | 'thumb' | 'drawing'): string {
   return base ? `${base}${path}` : path;
 }
 
-/** Shape expected by the Haven frontend ImageItem */
+/** Shape expected by the Cobea frontend ImageItem */
 export function serializeCard(card: CardWithFile) {
   const file = card.file;
   let url = card.url;

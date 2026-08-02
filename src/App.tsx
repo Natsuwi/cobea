@@ -22,19 +22,54 @@ import { ZenHeader } from './components/ZenHeader';
 import { ProfileAvatarButton } from './components/ProfileAvatarButton';
 import { AccountPanel } from './components/AccountPanel';
 import { AuthScreen } from './components/AuthScreen';
+import { UpdateBanner } from './components/UpdateBanner';
 import { ITEM_DRAG_MIME } from './hooks/useCardDragPreview';
 import { placementSizeFromAspect, getItemAspectRatio } from './components/MoodboardCardFrame';
-import { api, dataUrlToBlob, getToken, setToken } from './lib/api';
+import { api, dataUrlToBlob, getToken, setToken, type DriveFolderRef, type StorageState } from './lib/api';
+import { useAppUpdate } from './hooks/useAppUpdate';
 
 const THEME_KEY = 'zen_gallery_theme_v1';
 
+function applyMeStorage(
+  me: StorageState,
+  setters: {
+    setGoogleConnected: (v: boolean) => void;
+    setStorageMode: (v: 'standard' | 'google') => void;
+    setGoogleConfigured: (v: boolean) => void;
+    setGoogleUploadFolderId: (v: string | null) => void;
+    setGoogleUploadFolderName: (v: string | null) => void;
+    setGoogleSyncFolders: (v: DriveFolderRef[]) => void;
+    setGoogleLastSyncAt: (v: string | null) => void;
+  }
+) {
+  setters.setGoogleConnected(me.googleConnected);
+  setters.setStorageMode(me.storageMode);
+  setters.setGoogleConfigured(me.googleConfigured);
+  setters.setGoogleUploadFolderId(me.googleUploadFolderId ?? null);
+  setters.setGoogleUploadFolderName(me.googleUploadFolderName ?? null);
+  setters.setGoogleSyncFolders(me.googleSyncFolders ?? []);
+  setters.setGoogleLastSyncAt(me.googleLastSyncAt ?? null);
+}
+
 export default function App() {
+  const {
+    updateAvailable,
+    builtAt,
+    updating,
+    applyUpdate,
+    dismiss: dismissUpdateBanner,
+  } = useAppUpdate();
+
   const [bootstrapping, setBootstrapping] = useState(true);
   const [authed, setAuthed] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [storageMode, setStorageMode] = useState<'standard' | 'google'>('standard');
   const [googleConfigured, setGoogleConfigured] = useState(false);
+  const [googleUploadFolderId, setGoogleUploadFolderId] = useState<string | null>(null);
+  const [googleUploadFolderName, setGoogleUploadFolderName] = useState<string | null>(null);
+  const [googleSyncFolders, setGoogleSyncFolders] = useState<DriveFolderRef[]>([]);
+  const [googleLastSyncAt, setGoogleLastSyncAt] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [theme, setTheme] = useState<ThemeMode>(() => {
@@ -69,12 +104,60 @@ export default function App() {
     setFolders(foldersRes.folders);
   }, []);
 
+  const storageSetters = useMemo(
+    () => ({
+      setGoogleConnected,
+      setStorageMode,
+      setGoogleConfigured,
+      setGoogleUploadFolderId,
+      setGoogleUploadFolderName,
+      setGoogleSyncFolders,
+      setGoogleLastSyncAt,
+    }),
+    []
+  );
+
+  const applyStoragePartial = useCallback((partial: Partial<StorageState>) => {
+    if (partial.googleConnected !== undefined) setGoogleConnected(partial.googleConnected);
+    if (partial.storageMode !== undefined) setStorageMode(partial.storageMode);
+    if (partial.googleConfigured !== undefined) setGoogleConfigured(partial.googleConfigured);
+    if (partial.googleUploadFolderId !== undefined) {
+      setGoogleUploadFolderId(partial.googleUploadFolderId);
+    }
+    if (partial.googleUploadFolderName !== undefined) {
+      setGoogleUploadFolderName(partial.googleUploadFolderName);
+    }
+    if (partial.googleSyncFolders !== undefined) {
+      setGoogleSyncFolders(partial.googleSyncFolders);
+    }
+    if (partial.googleLastSyncAt !== undefined) {
+      setGoogleLastSyncAt(partial.googleLastSyncAt);
+    }
+  }, []);
+
+  const maybeBackgroundSync = useCallback(async () => {
+    try {
+      const me = await api.me();
+      applyMeStorage(me, storageSetters);
+      if (
+        me.storageMode === 'google' &&
+        me.googleConnected &&
+        (me.googleSyncFolders?.length ?? 0) > 0
+      ) {
+        const result = await api.syncGoogleDrive();
+        setGoogleLastSyncAt(result.googleLastSyncAt);
+        if (result.imported > 0) await refreshGallery();
+      }
+    } catch {
+      /* ignore background sync errors */
+    }
+  }, [refreshGallery, storageSetters]);
+
   const bootstrap = useCallback(async () => {
     setBootstrapping(true);
     setLoadError(null);
     try {
       const config = await api.config();
-      setStorageMode(config.storageMode);
       setGoogleConfigured(config.googleConfigured);
 
       const token = getToken();
@@ -84,13 +167,13 @@ export default function App() {
       }
       const me = await api.me();
       setProfile(me.profile);
-      setGoogleConnected(me.googleConnected);
-      setStorageMode(me.storageMode);
+      applyMeStorage(me, storageSetters);
       if (me.profile.theme === 'light' || me.profile.theme === 'dark') {
         setTheme(me.profile.theme);
       }
       setAuthed(true);
       await refreshGallery();
+      void maybeBackgroundSync();
     } catch {
       setToken(null);
       setAuthed(false);
@@ -98,13 +181,16 @@ export default function App() {
     } finally {
       setBootstrapping(false);
     }
-  }, [refreshGallery]);
+  }, [maybeBackgroundSync, refreshGallery, storageSetters]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const google = params.get('google');
     if (google) {
       window.history.replaceState({}, '', window.location.pathname);
+      if (google === 'connected') {
+        setIsAccountOpen(true);
+      }
     }
     void bootstrap();
   }, [bootstrap]);
@@ -631,24 +717,45 @@ export default function App() {
     setAuthed(true);
     try {
       const me = await api.me();
-      setGoogleConnected(me.googleConnected);
-      setStorageMode(me.storageMode);
+      applyMeStorage(me, storageSetters);
       await refreshGallery();
+      void maybeBackgroundSync();
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Load failed');
     }
   };
 
+  const updateBanner = (
+    <AnimatePresence>
+      {updateAvailable && (
+        <UpdateBanner
+          builtAt={builtAt}
+          updating={updating}
+          onUpdate={() => void applyUpdate()}
+          onDismiss={dismissUpdateBanner}
+        />
+      )}
+    </AnimatePresence>
+  );
+
   if (bootstrapping) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-sm text-zinc-500">
-        Chargement…
-      </div>
+      <>
+        {updateBanner}
+        <div className="min-h-screen flex items-center justify-center text-sm text-zinc-500">
+          Chargement…
+        </div>
+      </>
     );
   }
 
   if (!authed || !profile) {
-    return <AuthScreen onAuthenticated={handleAuthenticated} />;
+    return (
+      <>
+        {updateBanner}
+        <AuthScreen onAuthenticated={handleAuthenticated} />
+      </>
+    );
   }
 
   return (
@@ -657,6 +764,7 @@ export default function App() {
         showSelectionDock ? 'pb-0' : 'pb-28'
       }`}
     >
+      {updateBanner}
       <DropOverlay isDragging={isDragging} />
 
       {loadError && (
@@ -679,9 +787,15 @@ export default function App() {
             googleConnected={googleConnected}
             storageMode={storageMode}
             googleConfigured={googleConfigured}
+            googleUploadFolderId={googleUploadFolderId}
+            googleUploadFolderName={googleUploadFolderName}
+            googleSyncFolders={googleSyncFolders}
+            googleLastSyncAt={googleLastSyncAt}
             onClose={() => setIsAccountOpen(false)}
             onLogout={handleLogout}
             onGoogleChange={setGoogleConnected}
+            onStorageChange={applyStoragePartial}
+            onSynced={() => void refreshGallery()}
           />
         )}
       </AnimatePresence>

@@ -27,7 +27,7 @@ export const PROFILES: UserProfile[] = [
   },
 ];
 
-export const PROFILE_STORAGE_KEY = 'haven_active_profile_v1';
+export const PROFILE_STORAGE_KEY = 'cobea_active_profile_v1';
 export const ACCOUNT_SWITCHER_BG = '/fond/FondVeille1.png';
 
 export function getStoredProfileId(): string {

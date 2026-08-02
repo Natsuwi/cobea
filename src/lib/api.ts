@@ -5,12 +5,24 @@ const TOKEN_KEY = 'cobea_token';
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || '';
 
 export type AuthUser = { id: string; email: string };
+
+export type DriveFolderRef = { id: string; name: string };
+
+export type StorageState = {
+  storageMode: 'standard' | 'google';
+  googleConnected: boolean;
+  googleConfigured: boolean;
+  googleCredentialsSet?: boolean;
+  googleUploadFolderId: string | null;
+  googleUploadFolderName: string | null;
+  googleSyncFolders: DriveFolderRef[];
+  googleLastSyncAt: string | null;
+};
+
 export type MeResponse = {
   user: AuthUser;
   profile: UserProfile & { theme?: ThemeMode };
-  googleConnected: boolean;
-  storageMode: 'standard' | 'google';
-};
+} & StorageState;
 
 export function getToken(): string | null {
   try {
@@ -88,10 +100,17 @@ async function request<T>(
 
 export const api = {
   config: () =>
-    request<{ storageMode: 'standard' | 'google'; googleConfigured: boolean }>('/api/config'),
+    request<{ googleConfigured: boolean; googleRedirectUri: string }>('/api/config'),
 
   register: (email: string, password: string, name?: string) =>
-    request<{ token: string; user: AuthUser; profile: UserProfile }>('/api/auth/register', {
+    request<{
+      token: string;
+      user: AuthUser;
+      profile: UserProfile;
+      googleConnected: boolean;
+      storageMode: 'standard' | 'google';
+      googleConfigured: boolean;
+    }>('/api/auth/register', {
       method: 'POST',
       json: { email, password, name },
     }),
@@ -102,6 +121,8 @@ export const api = {
       user: AuthUser;
       profile: UserProfile;
       googleConnected: boolean;
+      storageMode: 'standard' | 'google';
+      googleConfigured: boolean;
     }>('/api/auth/login', {
       method: 'POST',
       json: { email, password },
@@ -117,9 +138,38 @@ export const api = {
       json: data,
     }),
 
+  updateStorage: (data: {
+    storageMode?: 'standard' | 'google';
+    googleClientId?: string;
+    googleClientSecret?: string;
+    googleUploadFolderId?: string | null;
+    googleUploadFolderName?: string | null;
+    googleSyncFolders?: DriveFolderRef[];
+  }) => request<StorageState>('/api/auth/storage', { method: 'PATCH', json: data }),
+
   googleAuthUrl: () => request<{ url: string }>('/api/auth/google'),
 
-  disconnectGoogle: () => request<{ ok: boolean }>('/api/auth/google', { method: 'DELETE' }),
+  disconnectGoogle: () => request<{ ok: boolean } & StorageState>('/api/auth/google', { method: 'DELETE' }),
+
+  listDriveFolders: (parentId?: string | null) =>
+    request<{
+      parentId: string | null;
+      parentName: string | null;
+      folders: DriveFolderRef[];
+      breadcrumbs: DriveFolderRef[];
+    }>(
+      `/api/auth/google/folders${
+        parentId ? `?parentId=${encodeURIComponent(parentId)}` : ''
+      }`
+    ),
+
+  syncGoogleDrive: () =>
+    request<{
+      imported: number;
+      scanned: number;
+      skipped: number;
+      googleLastSyncAt: string | null;
+    }>('/api/auth/google/sync', { method: 'POST' }),
 
   listFolders: () => request<{ folders: Folder[] }>('/api/folders'),
 

@@ -1,15 +1,20 @@
-# Cobea / Haven
+# Cobea
 
 Galerie zen (React + Vite) avec backend Express dual-mode sur NAS Postgres.
 
 ## Modes de stockage
 
-| `STORAGE_MODE` | Contenu |
-|----------------|---------|
-| `standard` | Tout en Postgres (`BYTEA` pour les fichiers) |
-| `google` | Métadonnées + vignettes cache en Postgres ; binaires sur Google Drive |
+Par utilisateur (paramètres compte, avatar en haut à droite) :
 
-La galerie ne fait **jamais** de `files.list` Drive — uniquement upload et ouverture plein fichier.
+| Mode | Contenu |
+|------|---------|
+| Standard (défaut) | Tout en Postgres (`BYTEA`) |
+| Google Drive | Métadonnées + vignettes en Postgres ; binaires sur Drive |
+
+Pour activer Google : toggle dans le compte → Client ID / Secret (ou vars serveur) → Connecter Google Drive.
+
+Redirect OAuth à enregistrer dans Google Cloud :  
+`https://cobea.tnas-movies.ddns.net/api/auth/google/callback` (+ Drive API).
 
 ## Démarrage local (front)
 
@@ -34,30 +39,38 @@ npm run dev
 
 Voir [`server/.env.example`](server/.env.example).
 
-- Host Docker NAS : `waatch-postgres:5432` / DB `cobea_db`
+- Host Docker NAS : `shared-postgres:5432` / DB `cobea_db` (réseau `postgres-net`)
+- Dev local Windows : `IP_DU_NAS:5432` (port exposé du Postgres partagé)
 - API : port **3847**
-- Google OAuth : ajouter la redirect  
-  `http://localhost:3847/api/auth/google/callback`  
-  dans la console Google Cloud (Drive API activée)
+- Google OAuth (optionnel côté serveur, sinon saisi dans les paramètres) : redirect  
+  `https://cobea.tnas-movies.ddns.net/api/auth/google/callback`  
+  + Drive API activée
 
 ### Docker sur le NAS
 
-1. Placer le repo sur le NAS / build depuis ta machine vers le registry local
-2. Vérifier le **nom du réseau Docker** où tourne `waatch-postgres` :
+Prérequis :
+- stack Postgres partagée (`shared-postgres` sur `postgres-net`)
+- base `cobea_db` + user `cobea` créés
+- repo déployé dans `/Volume1/Docker/cobea` (adapter le chemin dans `docker-compose.yml` si besoin)
+
+Services :
+
+| Conteneur | Port NAS | Rôle |
+|-----------|----------|------|
+| `cobea-api` | **3847** | API Express (+ `prisma db push` au démarrage) |
+| `cobea-frontend` | **8083** | Nginx (SPA + proxy `/api` → API) |
 
 ```bash
-docker network ls
-docker inspect waatch-postgres --format '{{json .NetworkSettings.Networks}}'
-```
-
-3. Ajuster `networks.waatch-net.name` dans [`docker-compose.yml`](docker-compose.yml) si besoin
-4. Lancer :
-
-```bash
+cd /Volume1/Docker/cobea
 docker compose up -d --build
 ```
 
-Au démarrage du conteneur : `prisma db push` puis l’API.
+Accès : `https://cobea.tnas-movies.ddns.net` (reverse proxy → `:8083` ; `/api` → API).
+
+Reverse proxy : pointer le host vers le port **8083** du NAS (pas besoin d’exposer l’API publiquement).
+
+Si tu actives Google Drive, ajoute la redirect OAuth  
+`https://cobea.tnas-movies.ddns.net/api/auth/google/callback`.
 
 ## Auth
 

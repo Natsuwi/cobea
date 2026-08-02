@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-export const ITEM_DRAG_MIME = 'application/x-haven-item';
+export const ITEM_DRAG_MIME = 'application/x-cobea-item';
 
 /** Drag ghost size relative to the source card */
 export const CARD_DRAG_PREVIEW_SCALE = 0.58;

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Compass } from 'lucide-react';
 import { api, setToken } from '../lib/api';
 import type { UserProfile } from '../types';
+import { CobeaBrand } from './CobeaBrand';
+import { ACCOUNT_SWITCHER_BG } from '../data/profiles';
 
 type Mode = 'login' | 'register';
 
@@ -39,19 +40,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
     <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden">
       <div
         className="absolute inset-0 bg-cover bg-center opacity-40"
-        style={{ backgroundImage: "url('/fond/FondVeille1.png')" }}
+        style={{ backgroundImage: `url('${ACCOUNT_SWITCHER_BG}')` }}
         aria-hidden
       />
       <div className="absolute inset-0 bg-gradient-to-b from-zinc-50/90 via-zinc-100/85 to-amber-50/80 dark:from-zinc-950/95 dark:via-zinc-900/90 dark:to-zinc-950/95" />
 
       <div className="relative z-10 w-full max-w-md">
-        <div className="flex items-center justify-center gap-2 mb-8">
-          <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-amber-500 to-rose-400 flex items-center justify-center text-white shadow-sm">
-            <Compass className="w-4 h-4" />
-          </div>
-          <span className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-            Haven
-          </span>
+        <div className="flex items-center justify-center mb-8">
+          <CobeaBrand
+            markClassName="w-9 h-9 text-zinc-900 dark:text-zinc-50"
+            textClassName="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100"
+          />
         </div>
 
         <form
