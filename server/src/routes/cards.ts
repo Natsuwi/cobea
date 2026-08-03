@@ -6,7 +6,7 @@ import { prisma } from '../lib/prisma.js';
 import { serializeCard, listSerializedCards } from '../lib/serialize.js';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getStorageForUser, resolveFileBuffer } from '../storage/index.js';
-import { googleStorage } from '../storage/google.js';
+import { googleStorage, refreshDriveThumbnail } from '../storage/google.js';
 import { toDbFileSize } from '../lib/fileSize.js';
 
 const upload = multer({
@@ -423,9 +423,27 @@ async function serveCardMedia(
   if (kind === 'thumb') {
     if (card.file.thumbnailData) {
       res.setHeader('Content-Type', card.file.thumbnailMime || 'image/jpeg');
-      res.setHeader('Cache-Control', 'private, max-age=86400');
+      res.setHeader('Cache-Control', 'private, max-age=3600');
       res.send(Buffer.from(card.file.thumbnailData));
       return;
+    }
+    // Lazy: fetch Drive thumbnailLink, cache, serve
+    if (card.file.thumbnailLink && card.file.driveFileId) {
+      try {
+        const refreshed = await refreshDriveThumbnail(
+          req.auth!.userId,
+          req.auth!.profileId,
+          card.id
+        );
+        if (refreshed.file?.thumbnailData) {
+          res.setHeader('Content-Type', refreshed.file.thumbnailMime || 'image/jpeg');
+          res.setHeader('Cache-Control', 'private, max-age=3600');
+          res.send(Buffer.from(refreshed.file.thumbnailData));
+          return;
+        }
+      } catch (err) {
+        console.warn('Lazy thumb refresh failed', err);
+      }
     }
     // Fallback: serve full local data as thumb (standard mode) — still 0 Drive calls
     if (card.file.data) {
@@ -475,3 +493,21 @@ async function serveCardMedia(
 cardsRouter.get('/:id/file', (req, res) => serveCardMedia(req as AuthRequest, res, 'file'));
 cardsRouter.get('/:id/thumb', (req, res) => serveCardMedia(req as AuthRequest, res, 'thumb'));
 cardsRouter.get('/:id/drawing', (req, res) => serveCardMedia(req as AuthRequest, res, 'drawing'));
+
+/** Re-fetch expired Drive thumbnailLink (=s1200) and cache bytes */
+cardsRouter.post('/:id/thumbnail/refresh', async (req: AuthRequest, res) => {
+  try {
+    const card = await refreshDriveThumbnail(
+      req.auth!.userId,
+      req.auth!.profileId,
+      req.params.id
+    );
+    res.json({ card: serializeCard(card) });
+  } catch (err) {
+    const status = (err as { status?: number }).status ?? 500;
+    console.error('Thumbnail refresh error', err);
+    res.status(status).json({
+      error: err instanceof Error ? err.message : 'Refresh failed',
+    });
+  }
+});

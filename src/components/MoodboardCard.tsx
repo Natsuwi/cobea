@@ -6,6 +6,7 @@ import { useCardDragPreview } from '../hooks/useCardDragPreview';
 import { CardDragGhost } from './CardDragGhost';
 import { MarkdownPreview } from './MarkdownPreview';
 import { FileCardPreview, isDisplayableImageItem } from './FileCardPreview';
+import { RefreshableThumb } from './RefreshableThumb';
 
 interface MoodboardCardProps {
   item: ImageItem;
@@ -78,11 +79,9 @@ export const MoodboardCard: React.FC<MoodboardCardProps> = ({
                             <MarkdownPreview content={ref.markdown || ''} />
                           </div>
                         ) : isDisplayableImageItem(ref) && ref.url ? (
-                          <img
-                            src={ref.url}
-                            alt=""
+                          <RefreshableThumb
+                            item={ref}
                             className="w-full h-full object-cover"
-                            draggable={false}
                           />
                         ) : (
                           <FileCardPreview
@@ -159,11 +158,9 @@ export const MoodboardCard: React.FC<MoodboardCardProps> = ({
                           <MarkdownPreview content={ref.markdown || ''} />
                         </div>
                       ) : isDisplayableImageItem(ref) && ref.url ? (
-                        <img
-                          src={ref.url}
-                          alt=""
+                        <RefreshableThumb
+                          item={ref}
                           className="w-full h-full object-cover"
-                          draggable={false}
                         />
                       ) : (
                         <FileCardPreview

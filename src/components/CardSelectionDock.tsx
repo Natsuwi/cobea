@@ -7,6 +7,7 @@ import { Folder as FolderType } from '../types';
 import { ITEM_DRAG_MIME } from '../hooks/useCardDragPreview';
 import { MarkdownPreview } from './MarkdownPreview';
 import { FileCardPreview, isDisplayableImageItem } from './FileCardPreview';
+import { RefreshableThumb } from './RefreshableThumb';
 
 const CARD_W = 64;
 const CARD_H = 104;
@@ -51,7 +52,7 @@ function DeckCardPreview({ item, index, total }: { item: ImageItem; index: numbe
             <MarkdownPreview content={item.markdown || ''} className="line-clamp-6" />
           </div>
         ) : isDisplayableImageItem(item) && item.url ? (
-          <img src={item.url} alt="" className="w-full h-full object-cover" draggable={false} />
+          <RefreshableThumb item={item} className="w-full h-full object-cover" />
         ) : (
           <FileCardPreview
             title={item.title}

@@ -6,13 +6,37 @@ import { env } from '../lib/env.js';
 import { prisma } from '../lib/prisma.js';
 import { recordDriveCall, type DriveCallKind } from '../lib/driveQuota.js';
 import { toDbFileSize } from '../lib/fileSize.js';
+import { upgradeThumbnailLink } from '../lib/thumbnailLink.js';
 import type { StorageAdapter, StoredFileMeta } from './types.js';
 
 const DRIVE_FIELDS =
-  'id,name,mimeType,thumbnailLink,size,modifiedTime,imageMediaMetadata,shortcutDetails';
+  'id,name,mimeType,thumbnailLink,size,modifiedTime,imageMediaMetadata,videoMediaMetadata,shortcutDetails';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const IMAGE_MIME_PREFIX = 'image/';
+const VIDEO_MIME_PREFIX = 'video/';
 
+/** Fallback when Drive omits thumbnailLink (common for videos still processing). */
+function driveThumbnailFallbackUrl(driveFileId: string): string {
+  return `https://lh3.googleusercontent.com/d/${driveFileId}=s1200`;
+}
+
+function resolveThumbnailLink(
+  driveFileId: string,
+  mime: string,
+  rawLink: string | null | undefined
+): string | null {
+  const upgraded = upgradeThumbnailLink(rawLink);
+  if (upgraded) return upgraded;
+  // Videos / other media: Drive often exposes a stable /d/{id}=sN URL even without thumbnailLink
+  if (
+    mime.startsWith(VIDEO_MIME_PREFIX) ||
+    mime.startsWith(IMAGE_MIME_PREFIX) ||
+    mime.startsWith('application/')
+  ) {
+    return driveThumbnailFallbackUrl(driveFileId);
+  }
+  return null;
+}
 /** Google Workspace files must be exported (alt=media fails). */
 const GOOGLE_EXPORT_MAP: Record<string, { mime: string; ext: string }> = {
   'application/vnd.google-apps.document': {
@@ -368,8 +392,9 @@ async function cacheThumbnailFromLink(
   accessToken: string | null | undefined
 ): Promise<{ data?: Buffer; mime?: string }> {
   if (!thumbnailLink) return {};
+  const url = upgradeThumbnailLink(thumbnailLink) ?? thumbnailLink;
   try {
-    const res = await fetch(thumbnailLink, {
+    const res = await fetch(url, {
       headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
     });
     if (!res.ok) return {};
@@ -379,6 +404,76 @@ async function cacheThumbnailFromLink(
   } catch {
     return {};
   }
+}
+
+/**
+ * Re-fetch Drive thumbnailLink (expired CDN URLs), upscale to s1200, cache bytes.
+ */
+export async function refreshDriveThumbnail(
+  userId: string,
+  profileId: string,
+  cardId: string
+) {
+  const card = await prisma.card.findFirst({
+    where: { id: cardId, profileId },
+    include: { file: true },
+  });
+  if (!card?.file) {
+    throw Object.assign(new Error('Not found'), { status: 404 });
+  }
+  if (!card.file.driveFileId) {
+    throw Object.assign(new Error('No Drive file on this card'), { status: 400 });
+  }
+
+  const drive = await getAuthedDrive(userId);
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const meta = await drive.files.get({
+    fileId: card.file.driveFileId,
+    fields: 'thumbnailLink,mimeType,videoMediaMetadata',
+    supportsAllDrives: true,
+  });
+
+  const mime = meta.data.mimeType || card.file.mimeType;
+  const thumbnailLink = resolveThumbnailLink(
+    card.file.driveFileId,
+    mime,
+    meta.data.thumbnailLink
+  );
+  if (!thumbnailLink) {
+    throw Object.assign(new Error('Drive returned no thumbnail'), { status: 404 });
+  }
+
+  const cached = await cacheThumbnailFromLink(thumbnailLink, user?.googleAccessToken);
+
+  const videoMeta = meta.data.videoMediaMetadata;
+  const width = videoMeta?.width ? Number(videoMeta.width) : undefined;
+  const height = videoMeta?.height ? Number(videoMeta.height) : undefined;
+  const aspectRatio =
+    width && height && height > 0 ? width / height : undefined;
+
+  await prisma.cardFile.update({
+    where: { id: card.file.id },
+    data: {
+      thumbnailLink,
+      ...(cached.data
+        ? {
+            thumbnailData: cached.data,
+            thumbnailMime: cached.mime ?? 'image/jpeg',
+          }
+        : {}),
+    },
+  });
+
+  return prisma.card.update({
+    where: { id: card.id },
+    data: {
+      updatedAt: new Date(),
+      ...(width ? { width } : {}),
+      ...(height ? { height } : {}),
+      ...(aspectRatio ? { aspectRatio } : {}),
+    },
+    include: { file: true },
+  });
 }
 
 export function parseSyncFolders(raw: unknown): DriveFolderRef[] {
@@ -589,11 +684,18 @@ async function runSyncDriveFoldersForUser(
       let driveFileId = f.id;
       let mime = f.mimeType || 'application/octet-stream';
       let name = f.name || 'Sans titre';
-      let thumbnailLink = f.thumbnailLink ?? null;
       let size = toDbFileSize(f.size);
       let modifiedTime = f.modifiedTime ? new Date(f.modifiedTime) : null;
-      let width = f.imageMediaMetadata?.width ?? undefined;
-      let height = f.imageMediaMetadata?.height ?? undefined;
+      let width =
+        f.imageMediaMetadata?.width ??
+        (f.videoMediaMetadata?.width != null
+          ? Number(f.videoMediaMetadata.width)
+          : undefined);
+      let height =
+        f.imageMediaMetadata?.height ??
+        (f.videoMediaMetadata?.height != null
+          ? Number(f.videoMediaMetadata.height)
+          : undefined);
 
       if (mime === 'application/vnd.google-apps.shortcut') {
         const targetId = f.shortcutDetails?.targetId;
@@ -602,6 +704,8 @@ async function runSyncDriveFoldersForUser(
         driveFileId = targetId;
         if (targetMime) mime = targetMime;
       }
+
+      let thumbnailLink = resolveThumbnailLink(driveFileId, mime, f.thumbnailLink);
 
       scanned += 1;
       const percent = 35 + Math.round((scanned / total) * 65);
@@ -619,13 +723,49 @@ async function runSyncDriveFoldersForUser(
       if (known.has(driveFileId)) {
         const existingCard = await prisma.card.findFirst({
           where: { profileId, file: { driveFileId } },
-          select: { id: true },
+          select: {
+            id: true,
+            file: { select: { id: true, thumbnailLink: true, thumbnailData: true } },
+          },
         });
         if (existingCard) {
           await prisma.card.update({
             where: { id: existingCard.id },
             data: { tags: pathTags },
           });
+          // Backfill missing video/doc thumbs on re-sync
+          const needsThumb =
+            existingCard.file &&
+            !existingCard.file.thumbnailData &&
+            (!existingCard.file.thumbnailLink || mime.startsWith(VIDEO_MIME_PREFIX));
+          if (needsThumb && thumbnailLink) {
+            const cached = await cacheThumbnailFromLink(
+              thumbnailLink,
+              user.googleAccessToken
+            );
+            await prisma.cardFile.update({
+              where: { id: existingCard.file!.id },
+              data: {
+                thumbnailLink,
+                ...(cached.data
+                  ? {
+                      thumbnailData: cached.data,
+                      thumbnailMime: cached.mime ?? 'image/jpeg',
+                    }
+                  : {}),
+              },
+            });
+            if (width && height) {
+              await prisma.card.update({
+                where: { id: existingCard.id },
+                data: {
+                  width,
+                  height,
+                  aspectRatio: height > 0 ? width / height : undefined,
+                },
+              });
+            }
+          }
         }
         skipped += 1;
         continue;
@@ -647,13 +787,18 @@ async function runSyncDriveFoldersForUser(
       }
 
       const isImage = mime.startsWith(IMAGE_MIME_PREFIX);
+      const isVideo = mime.startsWith(VIDEO_MIME_PREFIX);
       const aspectRatio =
-        width && height && height > 0 ? width / height : isImage ? undefined : 0.85;
+        width && height && height > 0
+          ? width / height
+          : isImage || isVideo
+            ? undefined
+            : 0.85;
 
       let thumbnailData: Buffer | undefined;
       let thumbnailMime: string | undefined;
-      // Only cache Google's small preview thumb for images — never the full Drive file
-      if (isImage && thumbnailLink) {
+      // Cache Drive preview for images, videos, PDF, Docs, Sheets, Workspace, …
+      if (thumbnailLink) {
         const cached = await cacheThumbnailFromLink(thumbnailLink, user.googleAccessToken);
         thumbnailData = cached.data;
         thumbnailMime = cached.mime;
@@ -668,8 +813,8 @@ async function runSyncDriveFoldersForUser(
             url: '',
             tags: pathTags,
             source: ItemSource.drive,
-            width: isImage ? width ?? null : null,
-            height: isImage ? height ?? null : null,
+            width: isImage || isVideo ? width ?? null : null,
+            height: isImage || isVideo ? height ?? null : null,
             aspectRatio: aspectRatio ?? null,
             file: {
               create: {
@@ -774,15 +919,17 @@ export const googleStorage: StorageAdapter = {
 
     let thumbnailData: Buffer | undefined;
     let thumbnailMime: string | undefined;
+    const thumbnailLink = resolveThumbnailLink(
+      f.id,
+      f.mimeType || file.mimetype,
+      f.thumbnailLink
+    );
 
     if (file.mimetype.startsWith('image/')) {
       thumbnailData = file.buffer;
       thumbnailMime = file.mimetype;
-    } else {
-      const cached = await cacheThumbnailFromLink(
-        f.thumbnailLink,
-        user?.googleAccessToken
-      );
+    } else if (thumbnailLink) {
+      const cached = await cacheThumbnailFromLink(thumbnailLink, user?.googleAccessToken);
       thumbnailData = cached.data;
       thumbnailMime = cached.mime;
     }
@@ -792,7 +939,7 @@ export const googleStorage: StorageAdapter = {
       filename: f.name || file.originalname,
       size: toDbFileSize(f.size ?? file.size) ?? BigInt(file.size),
       driveFileId: f.id,
-      thumbnailLink: f.thumbnailLink ?? undefined,
+      thumbnailLink: thumbnailLink ?? undefined,
       thumbnailData,
       thumbnailMime,
       data: undefined,

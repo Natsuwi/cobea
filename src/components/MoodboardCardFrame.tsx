@@ -2,6 +2,7 @@
 import { ImageItem, MoodboardPlacement, isNoteItem } from '../types';
 import { MarkdownPreview } from './MarkdownPreview';
 import { FileCardPreview, isDisplayableImageItem } from './FileCardPreview';
+import { RefreshableThumb } from './RefreshableThumb';
 
 const MIN_SIZE = 6;
 /** Max side of a new moodboard card, as % of the canvas axis it maps to. */
@@ -66,6 +67,7 @@ interface MoodboardCardFrameProps {
   onResizeStart: (e: React.PointerEvent, handle: ResizeHandle) => void;
   onRotateStart: (e: React.PointerEvent) => void;
   onAspectRatioResolved?: (itemId: string, aspectRatio: number) => void;
+  onCardUpdated?: (card: ImageItem) => void;
 }
 
 export function MoodboardCardFrame({
@@ -78,6 +80,7 @@ export function MoodboardCardFrame({
   onResizeStart,
   onRotateStart,
   onAspectRatioResolved,
+  onCardUpdated,
 }: MoodboardCardFrameProps) {
   const rotation = placement.rotation ?? 0;
   const fallbackAR = getItemAspectRatio(item);
@@ -133,11 +136,10 @@ export function MoodboardCardFrame({
             />
           </div>
         ) : (
-          <img
-            src={item.url}
-            alt={item.title}
+          <RefreshableThumb
+            item={item}
             className="block w-full h-auto pointer-events-none select-none"
-            draggable={false}
+            onCardUpdated={onCardUpdated}
             onLoad={(e) => {
               const img = e.currentTarget;
               if (!img.naturalWidth || !img.naturalHeight) return;

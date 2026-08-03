@@ -53,6 +53,8 @@ export interface ImageItem {
   driveFileId?: string;
   /** Google Drive viewer URL for Drive-backed cards */
   driveUrl?: string;
+  /** Drive CDN thumbnail URL (may expire — refresh via API on error) */
+  thumbnailLink?: string;
 }
 
 export type ThemeMode = 'light' | 'dark';

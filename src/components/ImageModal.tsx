@@ -8,11 +8,13 @@ import {
   Download,
   Check,
   Tag as TagIcon,
+  Play,
 } from 'lucide-react';
 import { ImageItem } from '../types';
 import { DetailDrawingLayer } from './drawing/DetailDrawingLayer';
-import { FileCardPreview, isDisplayableImageItem } from './FileCardPreview';
+import { FileCardPreview, isDisplayableImageItem, isVideoItem } from './FileCardPreview';
 import { api } from '../lib/api';
+import { RefreshableThumb } from './RefreshableThumb';
 
 interface ImageModalProps {
   image: ImageItem | null;
@@ -22,6 +24,7 @@ interface ImageModalProps {
   onAddTag: (id: string, tag: string) => void;
   onRemoveTag: (id: string, tag: string) => void;
   onUpdateDrawing: (id: string, data: string | null) => void;
+  onCardUpdated?: (card: ImageItem) => void;
 }
 
 export const ImageModal: React.FC<ImageModalProps> = ({
@@ -32,6 +35,7 @@ export const ImageModal: React.FC<ImageModalProps> = ({
   onAddTag,
   onRemoveTag,
   onUpdateDrawing,
+  onCardUpdated,
 }) => {
   const [copied, setCopied] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
@@ -140,12 +144,20 @@ export const ImageModal: React.FC<ImageModalProps> = ({
                   />
                 </div>
               ) : (
-                <img
-                  src={image.url}
-                  alt={image.title}
-                  draggable={false}
-                  className="max-h-full max-w-full w-auto h-auto object-contain rounded-xl shadow-2xl pointer-events-none"
-                />
+                <div className="relative max-h-full max-w-full flex items-center justify-center">
+                  <RefreshableThumb
+                    item={image}
+                    onCardUpdated={onCardUpdated}
+                    className="max-h-full max-w-full w-auto h-auto object-contain rounded-xl shadow-2xl pointer-events-none"
+                  />
+                  {isVideoItem(image) ? (
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                      <span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/55 text-white shadow-lg backdrop-blur-sm ring-1 ring-white/20">
+                        <Play className="h-7 w-7 fill-current ml-1" />
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
               )}
             </div>
           </DetailDrawingLayer>

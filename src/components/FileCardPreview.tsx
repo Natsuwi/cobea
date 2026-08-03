@@ -13,15 +13,17 @@ import {
 } from 'lucide-react';
 import type { ImageItem } from '../types';
 
-/** True when the card should render as a real image (not an icon file tile). */
+/** True when the card has a visual preview (image file or Drive thumbnail). */
 export function isDisplayableImageItem(item: ImageItem): boolean {
   if (item.kind === 'note' || item.kind === 'moodboard') return false;
-  if (!item.url) return false;
+  return Boolean(item.url);
+}
+
+export function isVideoItem(item: ImageItem): boolean {
   const mime = item.mimeType?.toLowerCase() ?? '';
-  if (mime.startsWith('image/')) return true;
-  if (mime) return false;
-  // Legacy cards without mimeType: treat as image if URL looks usable
-  return true;
+  if (mime.startsWith('video/')) return true;
+  const ext = getFileExtension(item.filename || item.title);
+  return ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v', 'mpeg', 'mpg'].includes(ext);
 }
 
 export function getFileExtension(filenameOrTitle?: string | null): string {

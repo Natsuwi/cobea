@@ -19,6 +19,7 @@ interface MasonryGridProps {
   onOpenUpload: () => void;
   onDragStartItem?: (id: string) => void;
   onDragEndItem?: () => void;
+  onCardUpdated?: (card: ImageItem) => void;
 }
 
 function GalleryCard({
@@ -29,6 +30,7 @@ function GalleryCard({
   onDelete,
   onDragStartItem,
   onDragEndItem,
+  onCardUpdated,
 }: {
   item: ImageItem;
   allItems: ImageItem[];
@@ -37,6 +39,7 @@ function GalleryCard({
   onDelete: (id: string, e: React.MouseEvent) => void;
   onDragStartItem?: (id: string) => void;
   onDragEndItem?: () => void;
+  onCardUpdated?: (card: ImageItem) => void;
 }) {
   if (isMoodboardItem(item)) {
     const referencedItems = (item.moodboardPlacements || [])
@@ -74,6 +77,7 @@ function GalleryCard({
       onDelete={onDelete}
       onDragStartItem={onDragStartItem}
       onDragEndItem={onDragEndItem}
+      onCardUpdated={onCardUpdated}
     />
   );
 }
@@ -88,6 +92,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
   onOpenUpload,
   onDragStartItem,
   onDragEndItem,
+  onCardUpdated,
 }) => {
   const listKey = useMemo(() => images.map((i) => i.id).join('\0'), [images]);
   const [visibleCount, setVisibleCount] = useState(() =>
@@ -173,7 +178,8 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
               onToggleFavorite,
               onDeleteImage,
               onDragStartItem,
-              onDragEndItem
+              onDragEndItem,
+              onCardUpdated
             )}
           </div>
         ) : null}
@@ -191,6 +197,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
                   onDelete={onDeleteImage}
                   onDragStartItem={onDragStartItem}
                   onDragEndItem={onDragEndItem}
+                  onCardUpdated={onCardUpdated}
                 />
               ))}
             </AnimatePresence>
@@ -221,7 +228,8 @@ function renderColumn(
   onToggleFavorite: (id: string, e: React.MouseEvent) => void,
   onDeleteImage: (id: string, e: React.MouseEvent) => void,
   onDragStartItem?: (id: string) => void,
-  onDragEndItem?: () => void
+  onDragEndItem?: () => void,
+  onCardUpdated?: (card: ImageItem) => void
 ) {
   return (
     <div className="flex flex-col gap-4">
@@ -236,6 +244,7 @@ function renderColumn(
             onDelete={onDeleteImage}
             onDragStartItem={onDragStartItem}
             onDragEndItem={onDragEndItem}
+            onCardUpdated={onCardUpdated}
           />
         ))}
       </AnimatePresence>

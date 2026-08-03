@@ -1,10 +1,12 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Heart, Maximize2, Trash2, Tag as TagIcon } from 'lucide-react';
+import { Heart, Maximize2, Trash2, Tag as TagIcon, Play } from 'lucide-react';
 import { ImageItem } from '../types';
 import { useCardDragPreview, ITEM_DRAG_MIME } from '../hooks/useCardDragPreview';
 import { CardDragGhost } from './CardDragGhost';
-import { FileCardPreview, isDisplayableImageItem } from './FileCardPreview';
+import { FileCardPreview, isDisplayableImageItem, isVideoItem } from './FileCardPreview';
+import { RefreshableThumb } from './RefreshableThumb';
+import { CardThumbPlaceholder } from './CardThumbPlaceholder';
 
 export { ITEM_DRAG_MIME };
 
@@ -15,6 +17,7 @@ interface ImageCardProps {
   onDelete: (id: string, e: React.MouseEvent) => void;
   onDragStartItem?: (id: string) => void;
   onDragEndItem?: () => void;
+  onCardUpdated?: (card: ImageItem) => void;
 }
 
 export const ImageCard: React.FC<ImageCardProps> = ({
@@ -24,14 +27,21 @@ export const ImageCard: React.FC<ImageCardProps> = ({
   onDelete,
   onDragStartItem,
   onDragEndItem,
+  onCardUpdated,
 }) => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const { cardRef, preview, isDragging, handleDragStart, suppressClickIfDragged } =
     useCardDragPreview({ onDragStartItem, onDragEndItem });
   const showAsFile = !isDisplayableImageItem(image);
+  const showVideoBadge = !showAsFile && isVideoItem(image);
   const [mediaVisible, setMediaVisible] = useState(false);
   const mediaSentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setIsLoaded(false);
+    setHasError(false);
+  }, [image.id, image.url]);
 
   useEffect(() => {
     if (showAsFile || mediaVisible) return;
@@ -89,32 +99,44 @@ export const ImageCard: React.FC<ImageCardProps> = ({
           ) : (
             <div ref={mediaSentinelRef} className="relative w-full">
               {!isLoaded && !hasError && (
-                <div
-                  className="w-full bg-zinc-200/60 dark:bg-zinc-800/60 animate-pulse rounded-[2rem]"
-                  style={{
-                    paddingBottom: `${((1 / (image.aspectRatio || 1.2)) * 100).toFixed(1)}%`,
-                  }}
+                <CardThumbPlaceholder
+                  aspectRatio={image.aspectRatio || 1.2}
+                  className="rounded-[2rem]"
                 />
               )}
 
               {mediaVisible && !hasError ? (
-                <img
-                  src={image.url}
-                  alt={image.title || 'Galerie image'}
-                  loading="lazy"
-                  decoding="async"
-                  draggable={false}
+                <RefreshableThumb
+                  item={image}
                   onLoad={() => setIsLoaded(true)}
-                  onError={() => setHasError(true)}
+                  onCardUpdated={onCardUpdated}
+                  onFailed={() => setHasError(true)}
                   className={`w-full h-auto object-cover block transition-transform duration-700 ease-[0.16,1,0.3,1] group-hover:scale-[1.03] ${
                     isLoaded ? 'opacity-100' : 'opacity-0 absolute inset-0'
                   }`}
                 />
               ) : null}
 
+              {showVideoBadge && isLoaded && !hasError ? (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/55 text-white shadow-lg backdrop-blur-sm ring-1 ring-white/20">
+                    <Play className="h-5 w-5 fill-current ml-0.5" />
+                  </span>
+                </div>
+              ) : null}
+
               {hasError ? (
-                <div className="w-full min-h-[220px] flex flex-col items-center justify-center p-6 bg-zinc-100/50 dark:bg-zinc-900/50 text-zinc-400 text-xs">
-                  <span>Image non disponible</span>
+                <div
+                  className="w-full"
+                  style={{ aspectRatio: String(image.aspectRatio || 0.85) }}
+                >
+                  <FileCardPreview
+                    title={image.title}
+                    mimeType={image.mimeType}
+                    filename={image.filename}
+                    size="md"
+                    className="rounded-[2rem]"
+                  />
                 </div>
               ) : null}
             </div>
@@ -186,7 +208,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
       {preview && (
         <CardDragGhost preview={preview}>
           <div className="relative w-full h-full bg-zinc-200 dark:bg-zinc-800">
-            {showAsFile ? (
+            {showAsFile || hasError ? (
               <FileCardPreview
                 title={image.title}
                 mimeType={image.mimeType}
@@ -194,14 +216,12 @@ export const ImageCard: React.FC<ImageCardProps> = ({
                 size="sm"
               />
             ) : (
-              !hasError && (
-                <img
-                  src={image.url}
-                  alt=""
-                  draggable={false}
-                  className="w-full h-full object-cover"
-                />
-              )
+              <img
+                src={image.url}
+                alt=""
+                draggable={false}
+                className="w-full h-full object-cover"
+              />
             )}
             <div className="absolute inset-x-0 bottom-0 p-2.5 bg-gradient-to-t from-black/70 to-transparent">
               <p className="text-[11px] font-medium text-white truncate">

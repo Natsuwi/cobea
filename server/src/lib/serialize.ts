@@ -2,6 +2,7 @@ import type { Card, CardFile, Folder, Profile } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 import { env } from './env.js';
 import { prisma } from './prisma.js';
+import { upgradeThumbnailLink } from './thumbnailLink.js';
 
 export type CardWithFile = Card & { file: CardFile | null };
 
@@ -22,7 +23,7 @@ function mediaUrl(cardId: string, kind: 'file' | 'thumb' | 'drawing', version?: 
   const base = env.PUBLIC_API_URL.replace(/\/$/, '');
   const path = `/api/cards/${cardId}/${kind}`;
   const url = base ? `${base}${path}` : path;
-  if (kind === 'drawing' && version) {
+  if ((kind === 'drawing' || kind === 'thumb') && version) {
     return `${url}?v=${version}`;
   }
   return url;
@@ -34,6 +35,7 @@ function buildCardPayload(
     mimeType?: string;
     filename?: string;
     driveFileId?: string | null;
+    thumbnailLink?: string | null;
     hasData: boolean;
     hasThumbnail: boolean;
     hasDrawing: boolean;
@@ -41,12 +43,18 @@ function buildCardPayload(
   opts?: { truncateText?: boolean }
 ) {
   let url = card.url;
+  const thumbVersion = card.updatedAt.getTime();
 
   if (card.kind === 'image') {
-    if (file?.hasData) {
+    if (file?.hasData && file.mimeType?.startsWith('image/')) {
       url = mediaUrl(card.id, 'file');
     } else if (file?.hasThumbnail) {
-      url = mediaUrl(card.id, 'thumb');
+      url = mediaUrl(card.id, 'thumb', thumbVersion);
+    } else if (file?.thumbnailLink) {
+      // Drive CDN preview (docs / PDF / Workspace) — may expire → client refreshes
+      url = upgradeThumbnailLink(file.thumbnailLink) ?? file.thumbnailLink;
+    } else if (file?.hasData) {
+      url = mediaUrl(card.id, 'file');
     } else {
       url = url || '';
     }
@@ -88,6 +96,9 @@ function buildCardPayload(
     mimeType: file?.mimeType,
     filename: file?.filename,
     driveFileId,
+    thumbnailLink: file?.thumbnailLink
+      ? upgradeThumbnailLink(file.thumbnailLink) ?? file.thumbnailLink
+      : undefined,
     driveUrl: driveFileId
       ? `https://drive.google.com/file/d/${driveFileId}/view`
       : undefined,
@@ -104,6 +115,7 @@ export function serializeCard(card: CardWithFile) {
           mimeType: file.mimeType,
           filename: file.filename,
           driveFileId: file.driveFileId,
+          thumbnailLink: file.thumbnailLink,
           hasData: Boolean(file.data),
           hasThumbnail: Boolean(file.thumbnailData),
           hasDrawing: Boolean(file.drawingData),
@@ -176,6 +188,7 @@ export async function listSerializedCards(profileId: string) {
             mimeType: f.mimeType,
             filename: f.filename,
             driveFileId: f.driveFileId,
+            thumbnailLink: f.thumbnailLink,
             hasData: flag?.hasData ?? false,
             hasThumbnail: flag?.hasThumbnail ?? false,
             hasDrawing: flag?.hasDrawing ?? false,

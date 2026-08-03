@@ -443,6 +443,13 @@ export const api = {
 
   deleteCard: (id: string) => request<{ ok: boolean }>(`/api/cards/${id}`, { method: 'DELETE' }),
 
+  refreshCardThumbnail: async (id: string) => {
+    const r = await request<{ card: ImageItem }>(`/api/cards/${id}/thumbnail/refresh`, {
+      method: 'POST',
+    });
+    return { card: mapCard(r.card) };
+  },
+
   moveCards: (cardIds: string[], folderId: string | null) =>
     request<{ ok: boolean }>('/api/cards/batch/move', {
       method: 'POST',

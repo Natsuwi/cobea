@@ -23,6 +23,7 @@ interface MoodboardModalProps {
     data: { title?: string; moodboardPlacements?: MoodboardPlacement[] }
   ) => void;
   onUpdateDrawing: (id: string, data: string | null) => void;
+  onCardUpdated?: (card: ImageItem) => void;
 }
 
 type MoodboardInteractionMode = 'cursor' | 'draw';
@@ -58,6 +59,7 @@ export const MoodboardModal: React.FC<MoodboardModalProps> = ({
   onClose,
   onUpdateMoodboard,
   onUpdateDrawing,
+  onCardUpdated,
 }) => {
   const canvasRef = useRef<HTMLDivElement>(null);
   const layerRef = useRef<HTMLDivElement>(null);
@@ -553,6 +555,7 @@ export const MoodboardModal: React.FC<MoodboardModalProps> = ({
                         onResizeStart={(e, handle) => startResize(e, placement, handle)}
                         onRotateStart={(e) => startRotate(e, placement)}
                         onAspectRatioResolved={handleAspectResolved}
+                        onCardUpdated={onCardUpdated}
                       />
                     );
                   })}

@@ -1132,6 +1132,7 @@ export default function App() {
             setIsNearSelectionDock(false);
             setIsOverSelectionDock(false);
           }}
+          onCardUpdated={upsertCard}
         />
       </main>
 
@@ -1161,6 +1162,7 @@ export default function App() {
         onAddTag={handleAddTag}
         onRemoveTag={handleRemoveTag}
         onUpdateDrawing={handleUpdateDrawing}
+        onCardUpdated={upsertCard}
       />
 
       <NoteModal
@@ -1180,6 +1182,7 @@ export default function App() {
         onClose={() => setSelectedImageId(null)}
         onUpdateMoodboard={handleUpdateMoodboard}
         onUpdateDrawing={handleUpdateDrawing}
+        onCardUpdated={upsertCard}
       />
 
       <AddImageModal
