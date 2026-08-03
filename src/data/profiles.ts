@@ -1,4 +1,5 @@
 import { UserProfile } from '../types';
+import accountSwitcherBg from '../assets/FondVeille1.png';
 
 export const PROFILES: UserProfile[] = [
   {
@@ -28,7 +29,8 @@ export const PROFILES: UserProfile[] = [
 ];
 
 export const PROFILE_STORAGE_KEY = 'cobea_active_profile_v1';
-export const ACCOUNT_SWITCHER_BG = '/fond/FondVeille1.png';
+/** Bundled by Vite into /assets/. */
+export const ACCOUNT_SWITCHER_BG = accountSwitcherBg;
 
 export function getStoredProfileId(): string {
   try {

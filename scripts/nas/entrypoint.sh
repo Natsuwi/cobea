@@ -7,10 +7,17 @@ CONF_SRC="$HTML/_deploy/nginx/default.conf"
 echo "[cobea-frontend] Contenu monté dans $HTML :"
 ls -la "$HTML" || true
 
+# TerraMaster / SMB: fichiers souvent non lisibles par nginx → 403
+# (le message "frontend vide ou illisible" vient de là)
+echo "[cobea-frontend] Correction des permissions…"
+chmod -R a+rX "$HTML" 2>/dev/null || true
+# s'assurer que les dossiers parents restent traversables
+find "$HTML" -type d -exec chmod a+rx {} + 2>/dev/null || true
+find "$HTML" -type f -exec chmod a+r {} + 2>/dev/null || true
+
 # Cas fréquent : copie du dossier frontend DANS frontend/ → frontend/frontend/index.html
 if [ ! -f "$HTML/index.html" ] && [ -f "$HTML/frontend/index.html" ]; then
   echo "[cobea-frontend] Nesting détecté (frontend/frontend/). Correction…"
-  # Volume doit être writable (sans :ro)
   for item in "$HTML/frontend"/* "$HTML/frontend"/.[!.]*; do
     [ -e "$item" ] || continue
     base=$(basename "$item")
@@ -35,6 +42,9 @@ if [ ! -f "$HTML/index.html" ] && [ -f "$HTML/dist/index.html" ]; then
   rmdir "$HTML/dist" 2>/dev/null || rm -rf "$HTML/dist"
 fi
 
+# Re-appliquer après un éventuel mv
+chmod -R a+rX "$HTML" 2>/dev/null || true
+
 if [ -f "$CONF_SRC" ]; then
   cp "$CONF_SRC" /etc/nginx/conf.d/default.conf
 else
@@ -53,11 +63,25 @@ if [ ! -f "$HTML/index.html" ]; then
 <pre>/Volume1/Docker/cobea/frontend/index.html</pre>
 <p>Sur le PC :</p>
 <pre>npm run prepare:nas</pre>
-<p>Puis copie le dossier <code>frontend/</code> entier (son <em>contenu</em> doit inclure index.html à la racine).</p>
+<p>Puis copie le <em>contenu</em> de <code>frontend/</code> (ou le dossier entier) pour que
+<code>index.html</code> soit à la racine du volume monté — pas dans un sous-dossier.</p>
+<p>Structure attendue :</p>
+<pre>/Volume1/Docker/cobea/frontend/index.html
+/Volume1/Docker/cobea/frontend/assets/
+/Volume1/Docker/cobea/frontend/_deploy/
+/Volume1/Docker/cobea/backend/dist/
+</pre>
 <h2>Contenu actuel du volume</h2>
 <pre style="background:#f4f4f5;padding:1rem;overflow:auto">$FILES</pre>
 </body></html>
 EOF
+  chmod a+r "$HTML/index.html" 2>/dev/null || true
+fi
+
+# Test lecture réelle (évite un 403 silencieux)
+if ! cat "$HTML/index.html" >/dev/null 2>&1; then
+  echo "[cobea-frontend] ERREUR: index.html présent mais ILLISIBLE"
+  exit 1
 fi
 
 echo "[cobea-frontend] index.html OK → démarrage nginx"

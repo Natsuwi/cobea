@@ -34,11 +34,11 @@ emptyDir(frontOut);
 copyDirContents(frontSrc, frontOut);
 mkdirSync(join(frontOut, '_deploy', 'nginx'), { recursive: true });
 cpSync(
-  join(root, 'deploy', 'nginx', 'default.conf'),
+  join(root, 'scripts', 'nas', 'nginx', 'default.conf'),
   join(frontOut, '_deploy', 'nginx', 'default.conf')
 );
 cpSync(
-  join(root, 'deploy', 'nginx-entrypoint.sh'),
+  join(root, 'scripts', 'nas', 'entrypoint.sh'),
   join(frontOut, '_deploy', 'entrypoint.sh')
 );
 
