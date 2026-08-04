@@ -40,11 +40,14 @@ export function useAppUpdate() {
 
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onFocus);
+    const onSwUpdate = () => void check();
+    window.addEventListener('cobea:sw-update', onSwUpdate);
 
     return () => {
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener('cobea:sw-update', onSwUpdate);
     };
   }, [check]);
 

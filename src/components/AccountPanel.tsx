@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ChevronDown,
@@ -19,6 +19,7 @@ import { ThemeMode, UserProfile } from '../types';
 import { ACCOUNT_SWITCHER_BG } from '../data/profiles';
 import { api, type DriveFolderRef, type StorageState } from '../lib/api';
 import { ACCENT_OPTIONS, type AccentId } from '../lib/accent';
+import { COLUMN_OPTIONS } from '../lib/columnsPref';
 import { CobeaBrand } from './CobeaBrand';
 import { DriveFolderPicker } from './DriveFolderPicker';
 import { GoogleOAuthGuide } from './GoogleOAuthGuide';
@@ -44,6 +45,7 @@ interface AccountPanelProps {
   accent: AccentId;
   onAccentChange: (accent: AccentId) => void;
   columnCount: number;
+  columnPrefMode: 'mobile' | 'desktop';
   onColumnCountChange: (count: number) => void;
   googleConnected: boolean;
   storageMode: 'standard' | 'google';
@@ -66,6 +68,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
   accent,
   onAccentChange,
   columnCount,
+  columnPrefMode,
   onColumnCountChange,
   googleConnected,
   storageMode,
@@ -477,7 +480,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                     <div className="space-y-0.5 min-w-0">
                       <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
                         <Columns3 className="w-3.5 h-3.5 text-zinc-400" />
-                        Colonnes
+                        Colonnes · {columnPrefMode === 'mobile' ? 'Mobile' : 'Ordinateur'}
                       </p>
                       <p className="text-xs text-zinc-500">Cartes affichées par ligne</p>
                     </div>
@@ -486,7 +489,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                     </span>
                   </div>
                   <div className="flex gap-1.5">
-                    {[2, 3, 4, 5, 6].map((n) => (
+                    {COLUMN_OPTIONS[columnPrefMode].map((n) => (
                       <button
                         key={n}
                         type="button"

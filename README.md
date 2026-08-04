@@ -25,6 +25,16 @@ npm run dev
 
 Le proxy Vite envoie `/api` → `http://localhost:3847`.
 
+## PWA
+
+L’app est installable (Chrome / Edge / Android / Safari iOS « Sur l’écran d’accueil »).
+
+- Manifest + service worker via `vite-plugin-pwa`
+- Icônes : `public/pwa/` (régénérer avec `npm run icons:pwa`)
+- Les appels `/api/*` ne sont **pas** mis en cache (NetworkOnly)
+
+En production HTTPS (NAS), le navigateur propose « Installer Cobea ».
+
 ## Backend
 
 ```bash

@@ -42,10 +42,15 @@ import {
   type AccentId,
 } from './lib/accent';
 import { useAppUpdate } from './hooks/useAppUpdate';
+import { useIsMobileViewport } from './hooks/useIsMobileViewport';
+import {
+  loadDesktopColumns,
+  loadMobileColumns,
+  persistDesktopColumns,
+  persistMobileColumns,
+} from './lib/columnsPref';
 
 const THEME_KEY = 'zen_gallery_theme_v1';
-const COLUMNS_KEY = 'zen_gallery_columns_v1';
-
 /** Prevents React Strict Mode double-mount from running bootstrap/sync twice. */
 let bootstrapStarted = false;
 
@@ -121,12 +126,11 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTagFilters, setActiveTagFilters] = useState<string[]>([]);
   const [zenMode, setZenMode] = useState(false);
-  const [columnCount, setColumnCount] = useState<number>(() => {
-    const saved = localStorage.getItem(COLUMNS_KEY);
-    const n = saved ? Number(saved) : 5;
-    return n >= 2 && n <= 6 ? n : 5;
-  });
-
+  const isMobileViewport = useIsMobileViewport();
+  const [desktopColumns, setDesktopColumns] = useState(loadDesktopColumns);
+  const [mobileColumns, setMobileColumns] = useState(loadMobileColumns);
+  const columnCount = isMobileViewport ? mobileColumns : desktopColumns;
+  const setColumnCount = isMobileViewport ? setMobileColumns : setDesktopColumns;
   const handleToggleZenMode = useCallback(async () => {
     if (zenMode) {
       setZenMode(false);
@@ -347,8 +351,12 @@ export default function App() {
   }, [accent]);
 
   useEffect(() => {
-    localStorage.setItem(COLUMNS_KEY, String(columnCount));
-  }, [columnCount]);
+    persistDesktopColumns(desktopColumns);
+  }, [desktopColumns]);
+
+  useEffect(() => {
+    persistMobileColumns(mobileColumns);
+  }, [mobileColumns]);
 
   useEffect(() => {
     if (!authed) return;
@@ -1036,6 +1044,7 @@ export default function App() {
           profile={profile}
           onClick={() => setIsAccountOpen(true)}
           onSwitchAccounts={() => setIsSwitcherOpen(true)}
+          className="hidden md:flex"
         />
       )}
 
@@ -1063,6 +1072,7 @@ export default function App() {
             accent={accent}
             onAccentChange={setAccent}
             columnCount={columnCount}
+            columnPrefMode={isMobileViewport ? 'mobile' : 'desktop'}
             onColumnCountChange={setColumnCount}
             googleConnected={googleConnected}
             storageMode={storageMode}
@@ -1115,6 +1125,10 @@ export default function App() {
         onToggleFavoriteFilter={() => setIsFavoriteFilterActive(!isFavoriteFilterActive)}
         zenMode={zenMode}
         onOpenUpload={() => setIsAddModalOpen(true)}
+        profile={profile}
+        showAccountControls={!isAccountOpen && !isSwitcherOpen}
+        onOpenAccount={() => setIsAccountOpen(true)}
+        onSwitchAccounts={() => setIsSwitcherOpen(true)}
       />
 
       <main>

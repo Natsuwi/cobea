@@ -81,6 +81,8 @@ const PRESERVE_KEYS = [
   'cobea_accounts_v1',
   'zen_gallery_theme_v1',
   'zen_gallery_columns_v1',
+  'zen_gallery_columns_desktop_v1',
+  'zen_gallery_columns_mobile_v1',
   'zen_gallery_accent_v1',
   DISMISSED_KEY,
 ] as const;
