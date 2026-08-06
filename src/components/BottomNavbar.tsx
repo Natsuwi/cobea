@@ -269,7 +269,7 @@ export const BottomNavbar: React.FC<BottomNavbarProps> = ({
       </AnimatePresence>
 
       <motion.div
-        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-[92vw] sm:max-w-none flex flex-col items-center gap-2"
+        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-[92vw] sm:max-w-none flex flex-col items-center gap-2 pb-[env(safe-area-inset-bottom,0px)]"
         animate={{
           y: hiddenForSelection || searchDrawerOpen ? 140 : 0,
           opacity: hiddenForSelection || searchDrawerOpen ? 0 : 1,

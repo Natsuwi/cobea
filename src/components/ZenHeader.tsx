@@ -295,7 +295,7 @@ export const ZenHeader: React.FC<ZenHeaderProps> = ({
           className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium bg-white/80 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-300 border border-black/5 dark:border-white/10 shadow-sm"
         >
           <Sparkles className="w-3 h-3 text-accent fill-accent/20" />
-          <span>Glissez n'importe quelle image pour commencer</span>
+          <span>Glissez ou collez une image pour commencer</span>
         </motion.div>
 
         <motion.h2

@@ -340,6 +340,17 @@ export default function App() {
     if (theme === 'dark') root.classList.add('dark');
     else root.classList.remove('dark');
     localStorage.setItem(THEME_KEY, theme);
+
+    // Android PWA system nav / status bar follow theme-color
+    const themeColor = theme === 'dark' ? '#0b0c0e' : '#f5f5f3';
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.setAttribute('name', 'theme-color');
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute('content', themeColor);
+
     if (authed) {
       void api.updateProfile({ theme }).catch(() => undefined);
     }
@@ -417,6 +428,62 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed]);
+
+  /** Paste image from clipboard on the main gallery view */
+  useEffect(() => {
+    if (!authed) return;
+
+    const isTypingTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      if (target.isContentEditable) return true;
+      return Boolean(target.closest('[contenteditable="true"], input, textarea, select'));
+    };
+
+    const canPasteImage = () =>
+      !selectedImageId && !isAddModalOpen && !isAccountOpen && !isSwitcherOpen;
+
+    const collectClipboardImages = (data: DataTransfer | null): File[] => {
+      if (!data) return [];
+      const files: File[] = [];
+      if (data.files?.length) {
+        for (const file of Array.from(data.files)) {
+          if (file.type.startsWith('image/')) files.push(file);
+        }
+      }
+      if (files.length > 0) return files;
+      for (const item of Array.from(data.items)) {
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) files.push(file);
+        }
+      }
+      return files;
+    };
+
+    const handlePaste = (e: ClipboardEvent) => {
+      if (!canPasteImage()) return;
+      if (isTypingTarget(e.target)) return;
+
+      const imageFiles = collectClipboardImages(e.clipboardData);
+      if (imageFiles.length === 0) return;
+
+      e.preventDefault();
+      const normalized = imageFiles.map((file, index) => {
+        const base = file.name.replace(/\.[^/.]+$/, '').trim().toLowerCase();
+        const generic = !base || base === 'image' || base === 'blob';
+        if (!generic) return file;
+        const label = imageFiles.length > 1 ? `Image collee ${index + 1}` : 'Image collee';
+        return new File([file], `${label}.jpg`, { type: file.type || 'image/jpeg' });
+      });
+      void handleProcessFiles(normalized);
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, selectedImageId, isAddModalOpen, isAccountOpen, isSwitcherOpen]);
 
   const availableTags = useMemo(() => {
     const tagsSet = new Set<string>();
