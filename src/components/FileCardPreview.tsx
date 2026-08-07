@@ -12,11 +12,21 @@ import {
   Presentation,
 } from 'lucide-react';
 import type { ImageItem } from '../types';
+import { isWebPageKind } from '../lib/cardKinds';
 
-/** True when the card has a visual preview (image file or Drive thumbnail). */
+/** True when the card has a visual image preview (not a link tile or file icon). */
 export function isDisplayableImageItem(item: ImageItem): boolean {
-  if (item.kind === 'note' || item.kind === 'moodboard') return false;
-  return Boolean(item.url);
+  const kind = item.kind?.toLowerCase();
+  if (kind === 'note' || kind === 'moodboard') return false;
+  if (isWebPageKind(item.kind)) return false;
+
+  if (item.hasFile && item.mimeType?.toLowerCase().startsWith('image/')) {
+    return true;
+  }
+  if (kind === 'image' || !item.kind) {
+    return Boolean(item.url);
+  }
+  return false;
 }
 
 export function isVideoItem(item: ImageItem): boolean {

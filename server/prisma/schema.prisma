@@ -73,25 +73,21 @@ model Folder {
   @@map("folders")
 }
 
-enum ItemKind {
-  image
-  note
-  moodboard
-}
-
 enum ItemSource {
   default
   uploaded
   url
   note
   drive
+  mymind
 }
 
 model Card {
   id                   String     @id @default(cuid())
   profileId            String     @map("profile_id")
   folderId             String?    @map("folder_id")
-  kind                 ItemKind   @default(image)
+  /// Cobea kinds (image, note, moodboard) or MyMind types (Image, Book, MusicAlbum, …)
+  kind                 String     @default("image")
   title                String
   url                  String     @default("")
   tags                 String[]   @default([])

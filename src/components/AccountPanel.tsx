@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   ChevronDown,
   Columns3,
+  FolderInput,
   FolderOpen,
   HardDrive,
   Link2,
@@ -11,6 +12,7 @@ import {
   RefreshCw,
   Square,
   Sun,
+  Trash2,
   Unlink,
   Upload,
   X,
@@ -20,6 +22,8 @@ import { ACCOUNT_SWITCHER_BG } from '../data/profiles';
 import { api, type DriveFolderRef, type StorageState } from '../lib/api';
 import { ACCENT_OPTIONS, type AccentId } from '../lib/accent';
 import { COLUMN_OPTIONS } from '../lib/columnsPref';
+import { importMyMindFolder, type MyMindImportProgress } from '../lib/mymindImport';
+import { getClientBuildId } from '../lib/appUpdate';
 import { CobeaBrand } from './CobeaBrand';
 import { DriveFolderPicker } from './DriveFolderPicker';
 import { GoogleOAuthGuide } from './GoogleOAuthGuide';
@@ -99,6 +103,8 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
     total?: number;
   } | null>(null);
   const syncAbortRef = useRef<AbortController | null>(null);
+  const mymindInputRef = useRef<HTMLInputElement>(null);
+  const [importProgress, setImportProgress] = useState<MyMindImportProgress | null>(null);
   const [redirectUri, setRedirectUri] = useState(
     `${window.location.origin}/api/auth/google/callback`
   );
@@ -230,6 +236,50 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
       setMessage(err instanceof Error ? err.message : 'Erreur');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleDeleteAllCards = async () => {
+    if (
+      !window.confirm(
+        'Supprimer toutes les cards de la galerie ?\n\nGoogle Drive ne sera pas modifié.'
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    try {
+      const { deleted } = await api.deleteAllCards();
+      setMessage(`${deleted} card(s) supprimée(s).`);
+      onSynced?.();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Erreur');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleMyMindFolder = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList?.length) return;
+    setBusy(true);
+    setMessage(null);
+    setImportProgress({ done: 0, total: 0, message: 'Lecture du dossier…' });
+    try {
+      const { imported, failed } = await importMyMindFolder(Array.from(fileList), setImportProgress);
+      setMessage(
+        failed > 0
+          ? `Import terminé : ${imported} card(s), ${failed} échec(s).`
+          : `Import terminé : ${imported} card(s).`
+      );
+      onSynced?.();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Import échoué');
+    } finally {
+      setBusy(false);
+      setImportProgress(null);
+      e.target.value = '';
     }
   };
 
@@ -784,6 +834,70 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                 <p className="text-sm text-center text-zinc-600 dark:text-zinc-300">{message}</p>
               )}
 
+              <section
+                aria-label="Outils de test"
+                className="rounded-2xl border border-dashed border-amber-300/60 dark:border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20 p-4 space-y-3"
+              >
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                    Mode test
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Import MyMind (dossier avec <span className="font-mono">cards.csv</span> + images
+                  nommées par id). En mode Google Drive, les images vont dans le dossier d’upload
+                  configuré.
+                  </p>
+                </div>
+
+                <input
+                  ref={mymindInputRef}
+                  type="file"
+                  className="hidden"
+                  // @ts-expect-error webkitdirectory is supported by Chromium browsers
+                  webkitdirectory=""
+                  directory=""
+                  multiple
+                  onChange={(e) => void handleMyMindFolder(e)}
+                />
+
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => mymindInputRef.current?.click()}
+                  className="flex items-center justify-center gap-2 w-full rounded-xl border border-zinc-200 dark:border-white/10 py-2.5 text-sm font-medium text-zinc-800 dark:text-zinc-100 hover:bg-white dark:hover:bg-white/5 disabled:opacity-50"
+                >
+                  <FolderInput className="w-4 h-4" />
+                  Importer depuis MyMind
+                </button>
+
+                {importProgress && (
+                  <div className="space-y-1.5">
+                    <div className="h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+                      <div
+                        className="h-full bg-amber-500 transition-all duration-300"
+                        style={{
+                          width:
+                            importProgress.total > 0
+                              ? `${Math.round((importProgress.done / importProgress.total) * 100)}%`
+                              : '12%',
+                        }}
+                      />
+                    </div>
+                    <p className="text-xs text-center text-zinc-500">{importProgress.message}</p>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleDeleteAllCards()}
+                  className="flex items-center justify-center gap-2 w-full rounded-xl border border-rose-200 dark:border-rose-500/30 bg-rose-50/80 dark:bg-rose-950/30 py-2.5 text-sm font-medium text-rose-700 dark:text-rose-300 hover:bg-rose-100/80 dark:hover:bg-rose-950/50 disabled:opacity-50"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Supprimer toutes les cards
+                </button>
+              </section>
+
               <button
                 type="button"
                 onClick={onLogout}
@@ -792,6 +906,10 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                 <LogOut className="w-4 h-4" />
                 Se déconnecter
               </button>
+
+              <p className="text-center text-[11px] text-zinc-400 dark:text-zinc-500 tabular-nums">
+                Version {getClientBuildId()}
+              </p>
             </motion.div>
           </div>
         </div>

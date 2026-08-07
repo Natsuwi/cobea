@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, LayoutGrid } from 'lucide-react';
+import { X, LayoutGrid, StickyNote } from 'lucide-react';
 import { ImageItem, MoodboardPlacement } from '../types';
 import { DetailDrawingLayer } from './drawing/DetailDrawingLayer';
 import { CobeaLogoMark } from './CobeaBrand';
@@ -20,7 +20,11 @@ interface MoodboardModalProps {
   onClose: () => void;
   onUpdateMoodboard: (
     id: string,
-    data: { title?: string; moodboardPlacements?: MoodboardPlacement[] }
+    data: {
+      title?: string;
+      moodboardPlacements?: MoodboardPlacement[];
+      additionalNotes?: string;
+    }
   ) => void;
   onUpdateDrawing: (id: string, data: string | null) => void;
   onCardUpdated?: (card: ImageItem) => void;
@@ -64,6 +68,8 @@ export const MoodboardModal: React.FC<MoodboardModalProps> = ({
   const canvasRef = useRef<HTMLDivElement>(null);
   const layerRef = useRef<HTMLDivElement>(null);
   const [title, setTitle] = useState('');
+  const [additionalNotes, setAdditionalNotes] = useState('');
+  const [notesOpen, setNotesOpen] = useState(false);
   const [placements, setPlacements] = useState<MoodboardPlacement[]>([]);
   const [interactionMode, setInteractionMode] = useState<MoodboardInteractionMode>('cursor');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -85,6 +91,8 @@ export const MoodboardModal: React.FC<MoodboardModalProps> = ({
   useEffect(() => {
     if (!moodboard) return;
     setTitle(moodboard.title || 'Moodboard');
+    setAdditionalNotes(moodboard.additionalNotes || '');
+    setNotesOpen(false);
     setPlacements(moodboard.moodboardPlacements || []);
     setInteractionMode('cursor');
     setSelectedId(null);
@@ -96,6 +104,15 @@ export const MoodboardModal: React.FC<MoodboardModalProps> = ({
     setDrawingReady(false);
     setAssetsReady(false);
   }, [moodboard?.id]);
+
+  useEffect(() => {
+    if (!moodboard) return;
+    if (additionalNotes === (moodboard.additionalNotes || '')) return;
+    const timer = window.setTimeout(() => {
+      onUpdateMoodboard(moodboard.id, { additionalNotes });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [additionalNotes, moodboard, onUpdateMoodboard]);
 
   // Preload card images so they appear with the drawing layer
   useEffect(() => {
@@ -463,18 +480,57 @@ export const MoodboardModal: React.FC<MoodboardModalProps> = ({
                 className="bg-transparent border-none outline-none text-lg font-medium text-white truncate max-w-[min(60vw,400px)]"
               />
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                persistPlacements();
-                onClose();
-              }}
-              className="p-2.5 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
-              title="Fermer"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setNotesOpen((v) => !v)}
+                className={`p-2.5 rounded-full transition-colors ${
+                  notesOpen || additionalNotes
+                    ? 'bg-accent/20 text-accent'
+                    : 'bg-white/10 text-white hover:bg-white/20'
+                }`}
+                title="Notes supplémentaires"
+              >
+                <StickyNote className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  persistPlacements();
+                  onClose();
+                }}
+                className="p-2.5 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+                title="Fermer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </header>
+
+          <AnimatePresence>
+            {notesOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="shrink-0 overflow-hidden border-b border-white/10 bg-[#0a0a0b]"
+              >
+                <div className="px-4 md:px-8 py-3">
+                  <label className="block text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2">
+                    Notes supplémentaires
+                  </label>
+                  <textarea
+                    value={additionalNotes}
+                    onChange={(e) => setAdditionalNotes(e.target.value)}
+                    placeholder="Contexte, rappels, liens utiles…"
+                    rows={3}
+                    className="w-full max-w-2xl px-3 py-2.5 text-xs leading-relaxed rounded-xl border border-white/10 bg-white/5 text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-accent/40 resize-y min-h-[72px]"
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div ref={layerRef} className="relative flex-1 min-h-0 overflow-hidden flex flex-col">
             <AnimatePresence>

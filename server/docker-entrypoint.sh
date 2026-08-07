@@ -24,7 +24,11 @@ if [ ! -d node_modules/express ]; then
 fi
 
 echo "[cobea-api] prisma db push…"
-npx prisma db push
+if [ "${COBEA_PRISMA_ACCEPT_DATA_LOSS:-1}" != "0" ]; then
+  npx prisma db push --accept-data-loss
+else
+  npx prisma db push
+fi
 
 echo "[cobea-api] starting…"
 exec node dist/index.js

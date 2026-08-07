@@ -8,6 +8,17 @@ export type AuthUser = { id: string; email: string };
 
 export type DriveFolderRef = { id: string; name: string };
 
+export type MyMindImportRow = {
+  mymindId: string;
+  type: string;
+  title?: string;
+  url?: string;
+  content?: string;
+  note?: string;
+  tags?: string[];
+  created?: string;
+};
+
 export type StorageState = {
   storageMode: 'standard' | 'google';
   googleConnected: boolean;
@@ -442,6 +453,26 @@ export const api = {
   },
 
   deleteCard: (id: string) => request<{ ok: boolean }>(`/api/cards/${id}`, { method: 'DELETE' }),
+
+  deleteAllCards: () =>
+    request<{ ok: boolean; deleted: number }>('/api/cards/all', { method: 'DELETE' }),
+
+  importMyMindBatch: async (manifest: MyMindImportRow[], files: File[]) => {
+    const fd = new FormData();
+    fd.append('manifest', JSON.stringify(manifest));
+    for (const file of files) {
+      fd.append('files', file, file.name);
+    }
+    const r = await request<{ imported: number; failed: number; cards: ImageItem[] }>(
+      '/api/cards/import/mymind',
+      { method: 'POST', formData: fd }
+    );
+    return {
+      imported: r.imported,
+      failed: r.failed,
+      cards: r.cards.map(mapCard),
+    };
+  },
 
   refreshCardThumbnail: async (id: string) => {
     const r = await request<{ card: ImageItem }>(`/api/cards/${id}/thumbnail/refresh`, {

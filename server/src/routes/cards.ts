@@ -14,6 +14,11 @@ const upload = multer({
   limits: { fileSize: 40 * 1024 * 1024 },
 });
 
+const importUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024, files: 50 },
+});
+
 export const cardsRouter = Router();
 cardsRouter.use(requireAuth);
 
@@ -64,6 +69,131 @@ cardsRouter.get('/', async (req: AuthRequest, res) => {
   res.json({ cards });
 });
 
+/** Delete all cards for the current profile — DB only, never touches Google Drive. */
+cardsRouter.delete('/all', async (req: AuthRequest, res) => {
+  const profileId = req.auth!.profileId;
+  const { count } = await prisma.card.deleteMany({ where: { profileId } });
+  res.json({ ok: true, deleted: count });
+});
+
+const mymindRowSchema = z.object({
+  mymindId: z.string().min(1),
+  type: z.string().min(1),
+  title: z.string().optional(),
+  url: z.string().optional(),
+  content: z.string().optional(),
+  note: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  created: z.string().optional(),
+});
+
+/** Import a batch of MyMind cards — uses active storage (Postgres or Google upload folder). */
+cardsRouter.post('/import/mymind', importUpload.any(), async (req: AuthRequest, res) => {
+  try {
+    const raw = req.body.manifest;
+    if (!raw || typeof raw !== 'string') {
+      res.status(400).json({ error: 'manifest required' });
+      return;
+    }
+    const manifest = JSON.parse(raw) as unknown;
+    const parsed = z.array(mymindRowSchema).safeParse(manifest);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    const uploaded = (req.files ?? []) as Express.Multer.File[];
+    const filesById = new Map<string, Express.Multer.File>();
+    for (const f of uploaded) {
+      const stem = f.originalname.replace(/\.[^.]+$/, '');
+      filesById.set(stem, f);
+    }
+
+    const profileId = req.auth!.profileId;
+    const userId = req.auth!.userId;
+    const storage = await getStorageForUser(userId);
+
+    if (storage.mode === 'google' && uploaded.length > 0) {
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user?.googleRefreshToken) {
+        res.status(400).json({ error: 'Connect Google Drive before importing files' });
+        return;
+      }
+      if (!user.googleUploadFolderId) {
+        res.status(400).json({ error: 'Choose a Google Drive upload folder in settings first' });
+        return;
+      }
+    }
+
+    let imported = 0;
+    let failed = 0;
+    const cards: ReturnType<typeof serializeCard>[] = [];
+
+    for (const row of parsed.data) {
+      try {
+        const kind = row.type;
+        const kindLower = kind.toLowerCase();
+        const file = filesById.get(row.mymindId);
+        const tagSet = new Set([...(row.tags ?? []), 'MyMind']);
+        tagSet.delete('');
+
+        let source: 'default' | 'uploaded' | 'url' | 'note' | 'mymind' | 'drive' = 'mymind';
+        if (kindLower === 'note') source = 'note';
+        else if (file) source = storage.mode === 'google' ? 'drive' : 'uploaded';
+        else if (row.url) source = 'url';
+
+        let fileMeta: Awaited<ReturnType<typeof storage.storeFile>> | null = null;
+        if (file) {
+          fileMeta = await storage.storeFile(userId, file, {
+            title: row.title?.trim() || file.originalname,
+          });
+        }
+
+        const card = await prisma.card.create({
+          data: {
+            profileId,
+            kind,
+            title: row.title?.trim() || 'Sans titre',
+            url: row.url || '',
+            tags: Array.from(tagSet),
+            source,
+            markdown: kindLower === 'note' ? row.content || '' : undefined,
+            additionalNotes: row.note || undefined,
+            ...(row.created ? { createdAt: new Date(row.created) } : {}),
+            ...(fileMeta
+              ? {
+                  file: {
+                    create: {
+                      mimeType: fileMeta.mimeType,
+                      filename: fileMeta.filename,
+                      data: fileMeta.data ?? null,
+                      driveFileId: fileMeta.driveFileId ?? null,
+                      thumbnailLink: fileMeta.thumbnailLink ?? null,
+                      thumbnailData: fileMeta.thumbnailData ?? null,
+                      thumbnailMime: fileMeta.thumbnailMime ?? null,
+                      size: toDbFileSize(fileMeta.size),
+                    },
+                  },
+                }
+              : {}),
+          },
+          include: { file: true },
+        });
+        cards.push(serializeCard(card));
+        imported++;
+      } catch (err) {
+        console.error('MyMind import row failed', row.mymindId, err);
+        failed++;
+      }
+    }
+
+    res.status(201).json({ imported, failed, cards });
+  } catch (err) {
+    console.error('MyMind import error', err);
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Import failed' });
+  }
+});
+
 cardsRouter.get('/:id', async (req: AuthRequest, res) => {
   const card = await prisma.card.findFirst({
     where: { id: req.params.id, profileId: req.auth!.profileId },
@@ -79,7 +209,7 @@ cardsRouter.get('/:id', async (req: AuthRequest, res) => {
 cardsRouter.post('/', upload.single('file'), async (req: AuthRequest, res) => {
   try {
     const body = req.body as Record<string, string>;
-    const kind = (body.kind as 'image' | 'note' | 'moodboard') || 'image';
+    const kind = body.kind || 'image';
     const title = body.title || 'Sans titre';
     const tags = body.tags ? (JSON.parse(body.tags) as string[]) : [];
     const folderId = body.folderId || null;

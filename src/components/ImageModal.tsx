@@ -9,10 +9,13 @@ import {
   Check,
   Tag as TagIcon,
   Play,
+  StickyNote,
 } from 'lucide-react';
 import { ImageItem } from '../types';
 import { DetailDrawingLayer } from './drawing/DetailDrawingLayer';
 import { FileCardPreview, isDisplayableImageItem, isVideoItem } from './FileCardPreview';
+import { WebLinkCardPreview } from './WebLinkCardPreview';
+import { externalUrlForCard, isWebPageKind } from '../lib/cardKinds';
 import { api } from '../lib/api';
 import { RefreshableThumb } from './RefreshableThumb';
 
@@ -24,6 +27,7 @@ interface ImageModalProps {
   onAddTag: (id: string, tag: string) => void;
   onRemoveTag: (id: string, tag: string) => void;
   onUpdateDrawing: (id: string, data: string | null) => void;
+  onUpdateAdditionalNotes: (id: string, additionalNotes: string) => void;
   onCardUpdated?: (card: ImageItem) => void;
 }
 
@@ -35,12 +39,20 @@ export const ImageModal: React.FC<ImageModalProps> = ({
   onAddTag,
   onRemoveTag,
   onUpdateDrawing,
+  onUpdateAdditionalNotes,
   onCardUpdated,
 }) => {
   const [copied, setCopied] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   const [showAddTag, setShowAddTag] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [additionalNotes, setAdditionalNotes] = useState('');
+
+  useEffect(() => {
+    if (image) {
+      setAdditionalNotes(image.additionalNotes || '');
+    }
+  }, [image?.id]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -52,9 +64,22 @@ export const ImageModal: React.FC<ImageModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [image, onClose]);
 
+  useEffect(() => {
+    if (!image) return;
+    if (additionalNotes === (image.additionalNotes || '')) return;
+
+    const timer = window.setTimeout(() => {
+      onUpdateAdditionalNotes(image.id, additionalNotes);
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [additionalNotes, image, onUpdateAdditionalNotes]);
+
   if (!image) return null;
 
-  const showAsFile = !isDisplayableImageItem(image);
+  const externalUrl = externalUrlForCard(image.url);
+  const showAsWebLink = isWebPageKind(image.kind) && Boolean(externalUrl);
+  const showAsFile = !isDisplayableImageItem(image) && !showAsWebLink;
 
   const handleCopyLink = () => {
     const link = image.driveUrl || image.url;
@@ -134,7 +159,16 @@ export const ImageModal: React.FC<ImageModalProps> = ({
             className="flex-1 bg-zinc-950 min-h-[40vh] md:min-h-0 overflow-hidden"
           >
             <div className="absolute inset-0 flex items-center justify-center p-4 md:p-8">
-              {showAsFile ? (
+              {showAsWebLink && externalUrl ? (
+                <button
+                  type="button"
+                  onClick={() => window.open(externalUrl, '_blank', 'noopener,noreferrer')}
+                  className="w-full max-w-md aspect-[0.85] rounded-2xl overflow-hidden shadow-2xl border border-white/10 cursor-pointer hover:scale-[1.01] active:scale-[0.99] transition-transform pointer-events-auto"
+                  title="Ouvrir le site"
+                >
+                  <WebLinkCardPreview title={image.title} url={externalUrl} size="lg" />
+                </button>
+              ) : showAsFile ? (
                 <div className="w-full max-w-md aspect-[0.85] rounded-2xl overflow-hidden shadow-2xl pointer-events-none border border-white/10">
                   <FileCardPreview
                     title={image.title}
@@ -167,7 +201,8 @@ export const ImageModal: React.FC<ImageModalProps> = ({
             <div className="space-y-4">
               <div>
                 <h3 className="text-xl font-medium tracking-tight text-zinc-900 dark:text-zinc-100">
-                  {image.title || (showAsFile ? 'Fichier sans titre' : 'Image sans titre')}
+                  {image.title ||
+                    (showAsWebLink ? 'Site web' : showAsFile ? 'Fichier sans titre' : 'Image sans titre')}
                 </h3>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
                   Ajoutée le{' '}
@@ -234,6 +269,20 @@ export const ImageModal: React.FC<ImageModalProps> = ({
                 )}
               </div>
 
+              <div className="space-y-2">
+                <label className="flex items-center gap-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  <StickyNote className="w-3.5 h-3.5" />
+                  Notes supplémentaires
+                </label>
+                <textarea
+                  value={additionalNotes}
+                  onChange={(e) => setAdditionalNotes(e.target.value)}
+                  placeholder="Contexte, rappels, liens utiles…"
+                  rows={4}
+                  className="w-full px-3 py-2.5 text-xs leading-relaxed rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-400/40 resize-y min-h-[88px]"
+                />
+              </div>
+
               <div className="pt-2">
                 <span className="text-[11px] text-zinc-400 dark:text-zinc-500 uppercase tracking-wider font-semibold">
                   Source :{' '}
@@ -243,7 +292,9 @@ export const ImageModal: React.FC<ImageModalProps> = ({
                       ? 'Lien Web'
                       : image.source === 'drive'
                         ? 'Google Drive'
-                        : 'Galerie Zen'}
+                        : image.source === 'mymind'
+                          ? 'MyMind'
+                          : 'Galerie Zen'}
                 </span>
               </div>
             </div>
@@ -277,7 +328,11 @@ export const ImageModal: React.FC<ImageModalProps> = ({
                 <button
                   type="button"
                   onClick={handleDownload}
-                  disabled={downloading || (!image.hasFile && !image.driveFileId && !image.url)}
+                  disabled={
+                    downloading ||
+                    showAsWebLink ||
+                    (!image.hasFile && !image.driveFileId && !image.url)
+                  }
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-medium bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 hover:opacity-90 transition-all disabled:opacity-50"
                 >
                   <Download className="w-4 h-4" />

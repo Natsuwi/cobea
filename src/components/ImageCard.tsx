@@ -7,6 +7,9 @@ import { CardDragGhost } from './CardDragGhost';
 import { FileCardPreview, isDisplayableImageItem, isVideoItem } from './FileCardPreview';
 import { RefreshableThumb } from './RefreshableThumb';
 import { CardThumbPlaceholder } from './CardThumbPlaceholder';
+import { WebLinkCardPreview } from './WebLinkCardPreview';
+import { CardKindBadge } from './CardKindBadge';
+import { externalUrlForCard, isWebPageKind } from '../lib/cardKinds';
 
 export { ITEM_DRAG_MIME };
 
@@ -33,8 +36,10 @@ export const ImageCard: React.FC<ImageCardProps> = ({
   const [hasError, setHasError] = useState(false);
   const { cardRef, preview, isDragging, handleDragStart, suppressClickIfDragged } =
     useCardDragPreview({ onDragStartItem, onDragEndItem });
-  const showAsFile = !isDisplayableImageItem(image);
-  const showVideoBadge = !showAsFile && isVideoItem(image);
+  const showAsWebLink = isWebPageKind(image.kind) && Boolean(externalUrlForCard(image.url));
+  const showAsFile = !isDisplayableImageItem(image) && !showAsWebLink;
+  const showVideoBadge = !showAsFile && !showAsWebLink && isVideoItem(image);
+  const externalUrl = externalUrlForCard(image.url);
   const [mediaVisible, setMediaVisible] = useState(false);
   const mediaSentinelRef = useRef<HTMLDivElement>(null);
 
@@ -71,6 +76,10 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
         className="group relative overflow-hidden rounded-[1.75rem] md:rounded-[2rem] bg-zinc-200/40 dark:bg-zinc-800/40 border border-black/5 dark:border-white/5 transition-shadow duration-500 hover:shadow-2xl hover:shadow-black/10 dark:hover:shadow-black/50"
       >
+        <div className="absolute top-2.5 left-2.5 z-20 pointer-events-none">
+          <CardKindBadge kind={image.kind} />
+        </div>
+
         <div
           draggable
           onDragStart={(e) => handleDragStart(e, image.id)}
@@ -81,7 +90,21 @@ export const ImageCard: React.FC<ImageCardProps> = ({
           }}
           className="cursor-grab active:cursor-grabbing"
         >
-          {showAsFile ? (
+          {showAsWebLink && externalUrl ? (
+            <div
+              className="w-full"
+              style={{
+                aspectRatio: String(image.aspectRatio || 0.85),
+              }}
+            >
+              <WebLinkCardPreview
+                title={image.title}
+                url={externalUrl}
+                size="md"
+                className="rounded-[2rem]"
+              />
+            </div>
+          ) : showAsFile ? (
             <div
               className="w-full"
               style={{

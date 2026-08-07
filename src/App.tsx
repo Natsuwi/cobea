@@ -804,7 +804,14 @@ export default function App() {
   }, [selectionDockIds, images, clearSelectionDock, upsertCard]);
 
   const handleUpdateMoodboard = useCallback(
-    async (id: string, data: { title?: string; moodboardPlacements?: MoodboardPlacement[] }) => {
+    async (
+      id: string,
+      data: {
+        title?: string;
+        moodboardPlacements?: MoodboardPlacement[];
+        additionalNotes?: string;
+      }
+    ) => {
       setImages((prev) => prev.map((item) => (item.id === id ? { ...item, ...data } : item)));
       try {
         const { card } = await api.updateCard(id, data);
@@ -1243,6 +1250,9 @@ export default function App() {
         onAddTag={handleAddTag}
         onRemoveTag={handleRemoveTag}
         onUpdateDrawing={handleUpdateDrawing}
+        onUpdateAdditionalNotes={(id, additionalNotes) =>
+          void handleUpdateNote(id, { additionalNotes })
+        }
         onCardUpdated={upsertCard}
       />
 

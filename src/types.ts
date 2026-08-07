@@ -1,4 +1,12 @@
-export type ItemKind = 'image' | 'note' | 'moodboard';
+export type ItemKind = string;
+
+export type ItemSource =
+  | 'default'
+  | 'uploaded'
+  | 'url'
+  | 'note'
+  | 'drive'
+  | 'mymind';
 
 export interface Folder {
   id: string;
@@ -30,7 +38,7 @@ export interface ImageItem {
   isFavorite?: boolean;
   width?: number;
   height?: number;
-  source?: 'default' | 'uploaded' | 'url' | 'note' | 'drive';
+  source?: ItemSource;
   /** Defaults to 'image' for legacy items */
   kind?: ItemKind;
   /** Markdown body when kind === 'note' */
@@ -69,13 +77,14 @@ export interface UserProfile {
 }
 
 export function isNoteItem(item: ImageItem): boolean {
-  return item.kind === 'note';
+  return item.kind?.toLowerCase() === 'note';
 }
 
 export function isImageItem(item: ImageItem): boolean {
-  return item.kind !== 'note' && item.kind !== 'moodboard';
+  const kind = item.kind?.toLowerCase();
+  return kind !== 'note' && kind !== 'moodboard';
 }
 
 export function isMoodboardItem(item: ImageItem): boolean {
-  return item.kind === 'moodboard';
+  return item.kind?.toLowerCase() === 'moodboard';
 }

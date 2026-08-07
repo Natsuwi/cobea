@@ -29,6 +29,26 @@ function mediaUrl(cardId: string, kind: 'file' | 'thumb' | 'drawing', version?: 
   return url;
 }
 
+function cardHasVisualFile(
+  kind: string,
+  file: {
+    mimeType?: string;
+    hasData: boolean;
+    hasThumbnail: boolean;
+    thumbnailLink?: string | null;
+  } | null
+): boolean {
+  if (!file) return false;
+  const kindLower = kind.toLowerCase();
+  if (kindLower === 'note' || kindLower === 'moodboard') return false;
+  return Boolean(
+    file.hasData ||
+      file.hasThumbnail ||
+      file.thumbnailLink ||
+      (file.mimeType?.startsWith('image/') && file.hasData)
+  );
+}
+
 function buildCardPayload(
   card: Card,
   file: {
@@ -45,7 +65,7 @@ function buildCardPayload(
   let url = card.url;
   const thumbVersion = card.updatedAt.getTime();
 
-  if (card.kind === 'image') {
+  if (cardHasVisualFile(card.kind, file)) {
     if (file?.hasData && file.mimeType?.startsWith('image/')) {
       url = mediaUrl(card.id, 'file');
     } else if (file?.hasThumbnail) {
