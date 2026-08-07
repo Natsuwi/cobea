@@ -13,6 +13,7 @@ import {
 import { ImageItem } from '../types';
 import { NoteEditor } from './NoteEditor';
 import { DetailDrawingLayer } from './drawing/DetailDrawingLayer';
+import { useIsMobileViewport } from '../hooks/useIsMobileViewport';
 
 interface NoteModalProps {
   note: ImageItem | null;
@@ -38,6 +39,7 @@ export const NoteModal: React.FC<NoteModalProps> = ({
   onUpdateNote,
   onUpdateDrawing,
 }) => {
+  const isMobile = useIsMobileViewport();
   const [title, setTitle] = useState('');
   const [markdown, setMarkdown] = useState('');
   const [additionalNotes, setAdditionalNotes] = useState('');
@@ -76,6 +78,15 @@ export const NoteModal: React.FC<NoteModalProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [note, onClose, isFullscreen]);
+
+  useEffect(() => {
+    if (!note || isFullscreen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [note, isFullscreen]);
 
   useEffect(() => {
     if (!isFullscreen) return;
@@ -126,7 +137,7 @@ export const NoteModal: React.FC<NoteModalProps> = ({
   };
 
   const sidebar = (
-    <div className="w-full md:w-96 md:max-w-[28%] shrink-0 p-6 md:p-8 flex flex-col justify-between overflow-y-auto bg-zinc-50 dark:bg-zinc-900/90 border-t md:border-t-0 md:border-l border-black/5 dark:border-white/10 space-y-6">
+    <div className="space-y-6">
       <div className="space-y-4">
         <div>
           <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
@@ -239,14 +250,16 @@ export const NoteModal: React.FC<NoteModalProps> = ({
         </button>
 
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setIsFullscreen(true)}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-medium bg-zinc-200/70 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-all"
-          >
-            <Maximize2 className="w-4 h-4" />
-            <span>Plein écran</span>
-          </button>
+          {!isMobile && (
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(true)}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-medium bg-zinc-200/70 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-all"
+            >
+              <Maximize2 className="w-4 h-4" />
+              <span>Plein écran</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -254,28 +267,21 @@ export const NoteModal: React.FC<NoteModalProps> = ({
               onDelete(note.id, e);
               handleClose();
             }}
-            className="p-2.5 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all"
+            className={`${isMobile ? 'flex-1 flex items-center justify-center gap-2' : ''} p-2.5 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all text-xs font-medium`}
             title="Supprimer"
           >
             <Trash2 className="w-4 h-4" />
+            {isMobile ? <span>Supprimer</span> : null}
           </button>
         </div>
       </div>
     </div>
   );
 
-  return (
-    <AnimatePresence>
-      <div
-        className={`fixed inset-0 z-50 ${
-          isFullscreen
-            ? 'bg-[var(--bg-main)]'
-            : 'flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-xl'
-        }`}
-      >
-        {!isFullscreen && <div className="absolute inset-0" onClick={handleClose} />}
-
-        {isFullscreen ? (
+  if (isFullscreen) {
+    return (
+      <AnimatePresence>
+        <div className="fixed inset-0 z-50 bg-[var(--bg-main)]">
           <motion.div
             key="note-fullscreen"
             initial={{ opacity: 0 }}
@@ -321,35 +327,108 @@ export const NoteModal: React.FC<NoteModalProps> = ({
               </div>
             </div>
           </motion.div>
-        ) : (
-          <motion.div
-            key="note-modal"
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
-            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-            className="relative z-10 w-[min(96vw,1400px)] h-[min(94vh,960px)] bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden shadow-2xl border border-black/10 dark:border-white/10 flex flex-col md:flex-row"
-          >
-            <DetailDrawingLayer
-              itemId={note.id}
-              drawingData={note.drawingData}
-              onDrawingChange={onUpdateDrawing}
-              className="flex-1 flex flex-col min-h-[40vh] md:min-h-0 overflow-hidden bg-zinc-50 dark:bg-zinc-950/40"
-            >
-              <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8">
-                <NoteEditor
-                  value={markdown}
-                  onChange={setMarkdown}
-                  autoFocus
-                  minRows={14}
-                  variant="embedded"
-                />
-              </div>
-            </DetailDrawingLayer>
+        </div>
+      </AnimatePresence>
+    );
+  }
 
-            {sidebar}
+  if (isMobile) {
+    return (
+      <AnimatePresence>
+        <div className="fixed inset-0 z-50 flex flex-col justify-end">
+          <motion.button
+            type="button"
+            aria-label="Fermer"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-black/55 backdrop-blur-sm"
+            onClick={handleClose}
+          />
+
+          <motion.div
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ duration: 0.38, ease: [0.16, 1, 0.3, 1] }}
+            className="relative z-10 flex flex-col w-full max-h-[94dvh] rounded-t-[1.75rem] bg-white dark:bg-zinc-900 shadow-2xl border border-black/10 dark:border-white/10 overflow-hidden"
+            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+          >
+            <div className="shrink-0 flex items-center justify-between px-4 pt-3 pb-2">
+              <div className="w-10" />
+              <div className="h-1 w-10 rounded-full bg-zinc-300 dark:bg-zinc-600" />
+              <button
+                type="button"
+                onClick={handleClose}
+                className="p-2 rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                aria-label="Fermer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+              <div className="relative min-h-[min(52vh,380px)] bg-zinc-50 dark:bg-zinc-950/40">
+                <DetailDrawingLayer
+                  itemId={note.id}
+                  drawingData={note.drawingData}
+                  onDrawingChange={onUpdateDrawing}
+                  className="min-h-[min(52vh,380px)] flex flex-col overflow-hidden"
+                >
+                  <div className="flex-1 min-h-0 overflow-y-auto p-4">
+                    <NoteEditor
+                      value={markdown}
+                      onChange={setMarkdown}
+                      autoFocus
+                      minRows={10}
+                      variant="embedded"
+                    />
+                  </div>
+                </DetailDrawingLayer>
+              </div>
+
+              <div className="p-5 bg-zinc-50 dark:bg-zinc-900/95">{sidebar}</div>
+            </div>
           </motion.div>
-        )}
+        </div>
+      </AnimatePresence>
+    );
+  }
+
+  return (
+    <AnimatePresence>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-xl">
+        <div className="absolute inset-0" onClick={handleClose} />
+
+        <motion.div
+          key="note-modal"
+          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 10 }}
+          transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+          className="relative z-10 w-[min(96vw,1400px)] h-[min(94vh,960px)] bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden shadow-2xl border border-black/10 dark:border-white/10 flex flex-col md:flex-row"
+        >
+          <DetailDrawingLayer
+            itemId={note.id}
+            drawingData={note.drawingData}
+            onDrawingChange={onUpdateDrawing}
+            className="flex-1 flex flex-col min-h-[40vh] md:min-h-0 overflow-hidden bg-zinc-50 dark:bg-zinc-950/40"
+          >
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8">
+              <NoteEditor
+                value={markdown}
+                onChange={setMarkdown}
+                autoFocus
+                minRows={14}
+                variant="embedded"
+              />
+            </div>
+          </DetailDrawingLayer>
+
+          <div className="w-full md:w-96 md:max-w-[28%] shrink-0 p-6 md:p-8 flex flex-col justify-between overflow-y-auto bg-zinc-50 dark:bg-zinc-900/90 border-t md:border-t-0 md:border-l border-black/5 dark:border-white/10">
+            {sidebar}
+          </div>
+        </motion.div>
       </div>
     </AnimatePresence>
   );
