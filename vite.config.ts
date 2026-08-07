@@ -28,6 +28,8 @@ export default defineConfig(() => {
           start_url: '/',
           scope: '/',
           display: 'standalone',
+          // Edge-to-edge like Bely: paints under system chrome, avoids white Android bottom gap
+          display_override: ['fullscreen', 'standalone'],
           orientation: 'any',
           background_color: '#0b0c0e',
           theme_color: '#0b0c0e',

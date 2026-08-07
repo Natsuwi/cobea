@@ -17,7 +17,7 @@ export const ProfileAvatarButton: React.FC<ProfileAvatarButtonProps> = ({
 }) => {
   return (
     <div
-      className={`fixed top-4 right-4 md:top-6 md:right-8 z-[45] flex-col items-center gap-2 ${className}`}
+      className={`fixed top-[max(1rem,env(safe-area-inset-top))] right-4 md:top-[max(1.5rem,env(safe-area-inset-top))] md:right-8 z-[45] flex-col items-center gap-2 ${className}`}
     >
       <button
         type="button"

@@ -28,7 +28,7 @@ export const UpdateBanner: React.FC<UpdateBannerProps> = ({
       animate={{ y: 0, opacity: 1 }}
       exit={{ y: -48, opacity: 0 }}
       transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-      className="fixed top-0 inset-x-0 z-[100] flex justify-center px-3 pt-3 pointer-events-none"
+      className="fixed top-0 inset-x-0 z-[100] flex justify-center px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pointer-events-none"
       role="status"
       aria-live="polite"
     >

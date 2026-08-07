@@ -341,7 +341,7 @@ export default function App() {
     else root.classList.remove('dark');
     localStorage.setItem(THEME_KEY, theme);
 
-    // Android PWA system nav / status bar follow theme-color
+    // Android / iOS PWA system chrome follow app background (avoids white bottom gap)
     const themeColor = theme === 'dark' ? '#0b0c0e' : '#f5f5f3';
     let meta = document.querySelector('meta[name="theme-color"]');
     if (!meta) {
@@ -350,6 +350,10 @@ export default function App() {
       document.head.appendChild(meta);
     }
     meta.setAttribute('content', themeColor);
+    // Keep splash / install chrome in sync when supported
+    document.querySelectorAll('meta[name="theme-color"]').forEach((el) => {
+      el.setAttribute('content', themeColor);
+    });
 
     if (authed) {
       void api.updateProfile({ theme }).catch(() => undefined);
