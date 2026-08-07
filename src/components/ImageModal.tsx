@@ -157,13 +157,13 @@ export const ImageModal: React.FC<ImageModalProps> = ({
         <button
           type="button"
           onClick={() => window.open(externalUrl, '_blank', 'noopener,noreferrer')}
-          className="w-full max-w-md aspect-[0.85] rounded-2xl overflow-hidden shadow-2xl border border-white/10 cursor-pointer hover:scale-[1.01] active:scale-[0.99] transition-transform pointer-events-auto"
+          className="w-full max-w-md h-full max-h-full aspect-[0.85] rounded-2xl overflow-hidden shadow-2xl border border-white/10 cursor-pointer hover:scale-[1.01] active:scale-[0.99] transition-transform pointer-events-auto"
           title="Ouvrir le site"
         >
           <WebLinkCardPreview title={image.title} url={externalUrl} size="lg" />
         </button>
       ) : showAsFile ? (
-        <div className="w-full max-w-md aspect-[0.85] rounded-2xl overflow-hidden shadow-2xl pointer-events-none border border-white/10">
+        <div className="w-full max-w-md h-full max-h-full aspect-[0.85] rounded-2xl overflow-hidden shadow-2xl pointer-events-none border border-white/10">
           <FileCardPreview
             title={image.title}
             mimeType={image.mimeType}
@@ -172,9 +172,10 @@ export const ImageModal: React.FC<ImageModalProps> = ({
           />
         </div>
       ) : (
-        <div className="relative max-h-full max-w-full flex items-center justify-center">
+        <div className="relative w-full h-full flex items-center justify-center">
           <RefreshableThumb
             item={image}
+            loading="eager"
             onCardUpdated={onCardUpdated}
             className="max-h-full max-w-full w-auto h-auto object-contain rounded-xl shadow-2xl pointer-events-none"
           />
@@ -374,7 +375,7 @@ export const ImageModal: React.FC<ImageModalProps> = ({
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ duration: 0.38, ease: [0.16, 1, 0.3, 1] }}
-            className="relative z-10 flex flex-col w-full max-h-[94dvh] rounded-t-[1.75rem] bg-white dark:bg-zinc-900 shadow-2xl border border-black/10 dark:border-white/10 overflow-hidden"
+            className="relative z-10 flex flex-col w-full h-[94dvh] max-h-[94dvh] rounded-t-[1.75rem] bg-white dark:bg-zinc-900 shadow-2xl border border-black/10 dark:border-white/10 overflow-hidden"
             style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
           >
             <div className="shrink-0 flex items-center justify-between px-4 pt-3 pb-2">
@@ -391,12 +392,16 @@ export const ImageModal: React.FC<ImageModalProps> = ({
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
-              <div className="relative w-full h-[min(58vh,420px)] bg-zinc-950">
+              {/* Explicit height — avoids 0-size media inside transformed drawer */}
+              <div
+                className="relative w-full shrink-0 bg-zinc-950"
+                style={{ height: 'min(58vh, 420px)' }}
+              >
                 <DetailDrawingLayer
                   itemId={image.id}
                   drawingData={image.drawingData}
                   onDrawingChange={onUpdateDrawing}
-                  className="absolute inset-0 overflow-hidden"
+                  className="absolute inset-0 w-full h-full overflow-hidden"
                 >
                   {mediaPreview}
                 </DetailDrawingLayer>

@@ -351,7 +351,7 @@ export const NoteModal: React.FC<NoteModalProps> = ({
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ duration: 0.38, ease: [0.16, 1, 0.3, 1] }}
-            className="relative z-10 flex flex-col w-full max-h-[94dvh] rounded-t-[1.75rem] bg-white dark:bg-zinc-900 shadow-2xl border border-black/10 dark:border-white/10 overflow-hidden"
+            className="relative z-10 flex flex-col w-full h-[94dvh] max-h-[94dvh] rounded-t-[1.75rem] bg-white dark:bg-zinc-900 shadow-2xl border border-black/10 dark:border-white/10 overflow-hidden"
             style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
           >
             <div className="shrink-0 flex items-center justify-between px-4 pt-3 pb-2">
@@ -368,12 +368,15 @@ export const NoteModal: React.FC<NoteModalProps> = ({
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
-              <div className="relative min-h-[min(52vh,380px)] bg-zinc-50 dark:bg-zinc-950/40">
+              <div
+                className="relative min-h-[min(52vh,380px)] bg-zinc-50 dark:bg-zinc-950/40"
+                style={{ minHeight: 'min(52vh, 380px)' }}
+              >
                 <DetailDrawingLayer
                   itemId={note.id}
                   drawingData={note.drawingData}
                   onDrawingChange={onUpdateDrawing}
-                  className="min-h-[min(52vh,380px)] flex flex-col overflow-hidden"
+                  className="absolute inset-0 w-full h-full flex flex-col overflow-hidden"
                 >
                   <div className="flex-1 min-h-0 overflow-y-auto p-4">
                     <NoteEditor

@@ -51,7 +51,7 @@ import {
 } from './lib/columnsPref';
 
 const THEME_KEY = 'zen_gallery_theme_v1';
-/** Prevents React Strict Mode double-mount from running bootstrap/sync twice. */
+/** Prevents React Strict Mode double-mount from running bootstrap twice. */
 let bootstrapStarted = false;
 
 function applyMeStorage(
@@ -205,29 +205,6 @@ export default function App() {
     }
   }, []);
 
-  const maybeBackgroundSync = useCallback(async () => {
-    try {
-      const me = await api.me();
-      applyMeStorage(me, storageSetters);
-      if (
-        me.storageMode !== 'google' ||
-        !me.googleConnected ||
-        (me.googleSyncFolders?.length ?? 0) === 0
-      ) {
-        return;
-      }
-      // Don't block / re-scan Drive on every page load — only if idle > 6h
-      const last = me.googleLastSyncAt ? Date.parse(me.googleLastSyncAt) : 0;
-      if (last && Date.now() - last < 6 * 60 * 60 * 1000) return;
-
-      const result = await api.syncGoogleDrive();
-      setGoogleLastSyncAt(result.googleLastSyncAt);
-      if (result.imported > 0) await refreshGallery();
-    } catch {
-      /* ignore background sync errors */
-    }
-  }, [refreshGallery, storageSetters]);
-
   const resetSessionUi = useCallback(() => {
     setImages([]);
     setFolders([]);
@@ -269,8 +246,7 @@ export default function App() {
     setImages(cardsRes.cards);
     setFolders(foldersRes.folders);
     setAuthed(true);
-    void maybeBackgroundSync();
-  }, [maybeBackgroundSync, storageSetters]);
+  }, [storageSetters]);
 
   const bootstrap = useCallback(async () => {
     setBootstrapping(true);
