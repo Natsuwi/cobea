@@ -123,6 +123,33 @@ export async function exchangeGoogleCode(userId: string, code: string) {
   return tokens;
 }
 
+function isGoogleInvalidGrant(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as {
+    message?: string;
+    code?: string | number;
+    response?: { data?: { error?: string; error_description?: string } };
+  };
+  const dataError = e.response?.data?.error;
+  const msg = `${e.message ?? ''} ${e.response?.data?.error_description ?? ''}`;
+  return (
+    dataError === 'invalid_grant' ||
+    e.code === 'invalid_grant' ||
+    msg.includes('invalid_grant')
+  );
+}
+
+export async function clearGoogleTokens(userId: string) {
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      googleRefreshToken: null,
+      googleAccessToken: null,
+      googleTokenExpiry: null,
+    },
+  });
+}
+
 export async function getAuthedDrive(userId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user?.googleRefreshToken) {
@@ -151,6 +178,25 @@ export async function getAuthedDrive(userId: string) {
       },
     });
   });
+
+  // Refresh early so invalid_grant fails with a clear reconnect message
+  try {
+    const tokenRes = await client.getAccessToken();
+    if (!tokenRes.token) {
+      throw Object.assign(new Error('Google access token unavailable'), { status: 401 });
+    }
+  } catch (err) {
+    if (isGoogleInvalidGrant(err)) {
+      await clearGoogleTokens(userId);
+      throw Object.assign(
+        new Error(
+          'Connexion Google Drive expirée — reconnecte ton compte dans les paramètres'
+        ),
+        { status: 401, code: 'google_reauth_required' }
+      );
+    }
+    throw err;
+  }
 
   return instrumentDrive(google.drive({ version: 'v3', auth: client }));
 }

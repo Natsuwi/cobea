@@ -575,7 +575,17 @@ export default function App() {
         upsertCard(card);
       } catch (err) {
         console.error('Upload failed', err);
-        setLoadError(err instanceof Error ? err.message : 'Upload failed');
+        const raw = err instanceof Error ? err.message : 'Upload failed';
+        const needsGoogleReconnect =
+          /invalid_grant|google_reauth|Google Drive expir|Connect Google Drive/i.test(raw);
+        if (needsGoogleReconnect) {
+          setGoogleConnected(false);
+          setLoadError(
+            'Connexion Google Drive expirée — ouvre les paramètres et reconnecte ton compte.'
+          );
+        } else {
+          setLoadError(raw);
+        }
       }
     }
   };

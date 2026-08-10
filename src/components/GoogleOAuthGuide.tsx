@@ -53,7 +53,10 @@ export const GoogleOAuthGuide: React.FC<GoogleOAuthGuideProps> = ({ redirectUri 
         <>
           <strong>APIs & Services → OAuth consent screen</strong> : type External (ou
           Internal si Workspace), renseigne le nom de l’app (ex. Cobea), ton email, puis
-          sauvegarde. En mode test, ajoute ton compte Google dans « Test users ».
+          sauvegarde. En mode <strong>Testing</strong>, ajoute ton compte dans « Test
+          users » — attention : Google expire le refresh token au bout de{' '}
+          <strong>7 jours</strong> tant que l’app n’est pas en « Production » (ou
+          Internal Workspace). Après ça, il faut reconnecter Drive une fois.
         </>
       ),
     },
