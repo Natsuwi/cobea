@@ -18,6 +18,8 @@ import { ImageModal } from './components/ImageModal';
 import { NoteModal } from './components/NoteModal';
 import { MoodboardModal } from './components/MoodboardModal';
 import { AddImageModal } from './components/AddImageModal';
+import { ShareImageModal, type ShareImageDraft } from './components/ShareImageModal';
+import { ConfirmDialog } from './components/ConfirmDialog';
 import { ZenHeader } from './components/ZenHeader';
 import { ProfileAvatarButton } from './components/ProfileAvatarButton';
 import { AccountPanel } from './components/AccountPanel';
@@ -41,6 +43,7 @@ import {
   parseAccentId,
   type AccentId,
 } from './lib/accent';
+import { consumeShareTarget, isShareTargetLaunch } from './lib/shareTarget';
 import { useAppUpdate } from './hooks/useAppUpdate';
 import { useIsMobileViewport } from './hooks/useIsMobileViewport';
 import {
@@ -117,6 +120,43 @@ export default function App() {
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [shareDraft, setShareDraft] = useState<ShareImageDraft | null>(null);
+  /** Pending card id awaiting styled delete confirmation */
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  /** Blocks gallery taps right after closing a modal (Android PWA ghost clicks). */
+  const galleryPointerGuardUntilRef = useRef(0);
+  const galleryPointerGuardTimerRef = useRef<number | null>(null);
+  const [galleryPointerLocked, setGalleryPointerLocked] = useState(false);
+
+  const armGalleryPointerGuard = useCallback((ms = 500) => {
+    galleryPointerGuardUntilRef.current = Date.now() + ms;
+    setGalleryPointerLocked(true);
+    if (galleryPointerGuardTimerRef.current != null) {
+      window.clearTimeout(galleryPointerGuardTimerRef.current);
+    }
+    galleryPointerGuardTimerRef.current = window.setTimeout(() => {
+      galleryPointerGuardTimerRef.current = null;
+      setGalleryPointerLocked(false);
+    }, ms);
+  }, []);
+
+  const isGalleryPointerGuarded = useCallback(
+    () => Date.now() < galleryPointerGuardUntilRef.current,
+    []
+  );
+
+  const closeDetailModal = useCallback(() => {
+    armGalleryPointerGuard();
+    setSelectedImageId(null);
+  }, [armGalleryPointerGuard]);
+  useEffect(() => {
+    return () => {
+      if (galleryPointerGuardTimerRef.current != null) {
+        window.clearTimeout(galleryPointerGuardTimerRef.current);
+      }
+    };
+  }, []);
+
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [isCardDragging, setIsCardDragging] = useState(false);
   const [isOverSelectionDock, setIsOverSelectionDock] = useState(false);
@@ -291,16 +331,72 @@ export default function App() {
 
     const params = new URLSearchParams(window.location.search);
     const google = params.get('google');
-    if (google) {
+    const shareTarget = params.get('share-target');
+    if (google || shareTarget) {
       window.history.replaceState({}, '', window.location.pathname);
-      if (google === 'connected') {
-        setLoadError(null);
-        setIsAccountOpen(true);
+    }
+    if (google === 'connected') {
+      setLoadError(null);
+      setIsAccountOpen(true);
+    }
+    if (shareTarget === '1') {
+      try {
+        sessionStorage.setItem('cobea_await_share', '1');
+        const sid = params.get('sid');
+        if (sid) sessionStorage.setItem('cobea_share_sid', sid);
+      } catch {
+        /* ignore */
       }
+    } else if (shareTarget === 'error') {
+      setLoadError('Partage impossible — réessaie depuis l’app source.');
     }
     void bootstrap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** Open share modal after Web Share Target → PWA (Android). */
+  useEffect(() => {
+    if (!authed || bootstrapping) return;
+    let pending = false;
+    try {
+      pending = sessionStorage.getItem('cobea_await_share') === '1';
+    } catch {
+      pending = isShareTargetLaunch();
+    }
+    if (!pending) return;
+    try {
+      sessionStorage.removeItem('cobea_await_share');
+    } catch {
+      /* ignore */
+    }
+
+    void (async () => {
+      let sid: string | null = null;
+      try {
+        sid = sessionStorage.getItem('cobea_share_sid');
+      } catch {
+        sid = null;
+      }
+      const shared = await consumeShareTarget(sid);
+      if (shared?.file && (shared.file.type.startsWith('image/') || !shared.file.type)) {
+        const type = shared.file.type || 'image/jpeg';
+        const file =
+          shared.file.type
+            ? shared.file
+            : new File([shared.file], shared.file.name || 'shared.jpg', { type });
+        setShareDraft({
+          file,
+          title: shared.title,
+          text: shared.text,
+          url: shared.url,
+        });
+        return;
+      }
+      setLoadError(
+        'Aucune image dans ce partage — dans Chrome, utilise « Partager l’image ».'
+      );
+    })();
+  }, [authed, bootstrapping]);
 
   useEffect(() => {
     if (!isCardDragging) {
@@ -528,15 +624,34 @@ export default function App() {
       if (!card.drawingData && previous.drawingData) {
         merged.drawingData = previous.drawingData;
       }
-      // Keep local blob preview while file upload is still running
+      // Keep local blob preview while file upload is still running,
+      // or when the server payload has no displayable URL yet.
       if (card.uploadPending === false) {
         merged.uploadPending = false;
+        if (!card.url && previous.url) merged.url = previous.url;
       } else if (previous.uploadPending && previous.url.startsWith('blob:')) {
         merged.url = previous.url;
         merged.uploadPending = true;
+      } else if (!card.url && previous.url) {
+        merged.url = previous.url;
       }
-      const without = prev.filter((_, i) => i !== idx);
-      return [merged, ...without];
+
+      // Thumb / media refreshes must not reorder the gallery
+      const contentUnchanged =
+        previous.title === merged.title &&
+        previous.markdown === merged.markdown &&
+        previous.additionalNotes === merged.additionalNotes &&
+        previous.isFavorite === merged.isFavorite &&
+        previous.folderId === merged.folderId &&
+        JSON.stringify(previous.tags || []) === JSON.stringify(merged.tags || []);
+      if (contentUnchanged && previous.updatedAt != null) {
+        merged.updatedAt = previous.updatedAt;
+      }
+
+      // Update in place — do NOT move to front (masonry thrash)
+      const next = [...prev];
+      next[idx] = merged;
+      return next;
     });
   }, []);
 
@@ -550,15 +665,24 @@ export default function App() {
     if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
   };
 
-  const handleProcessFiles = async (files: FileList | File[]) => {
+  const handleProcessFiles = async (
+    files: FileList | File[],
+    opts?: { title?: string; tags?: string[]; additionalNotes?: string }
+  ) => {
     const fileArray = Array.from(files).filter((f) => f.type.startsWith('image/'));
 
-    const processOne = async (file: File) => {
-      const title = file.name.replace(/\.[^/.]+$/, '') || 'Image';
+    const processOne = async (file: File, fileOpts?: typeof opts) => {
+      const title =
+        fileOpts?.title?.trim() ||
+        file.name.replace(/\.[^/.]+$/, '') ||
+        'Image';
       const tags =
-        activeTagFiltersRef.current.length > 0
-          ? [...activeTagFiltersRef.current]
-          : ['Upload'];
+        fileOpts?.tags && fileOpts.tags.length > 0
+          ? [...fileOpts.tags]
+          : activeTagFiltersRef.current.length > 0
+            ? [...activeTagFiltersRef.current]
+            : ['Upload'];
+      const additionalNotes = fileOpts?.additionalNotes?.trim() || undefined;
       const folderId = selectedFolderIdRef.current;
       const localUrl = URL.createObjectURL(file);
       const tempId = `pending-${crypto.randomUUID()}`;
@@ -571,6 +695,7 @@ export default function App() {
         url: localUrl,
         title,
         tags,
+        additionalNotes,
         kind: 'image',
         source: 'uploaded',
         folderId,
@@ -592,13 +717,21 @@ export default function App() {
           tags,
           source: 'uploaded',
           folderId,
+          additionalNotes,
         });
         if (abort.signal.aborted) {
           revokeIfBlobUrl(localUrl);
-          try {
-            await api.deleteCard(shell.id);
-          } catch {
-            /* ignore */
+          // Only drop the server shell if the user already removed the card
+          // (pending id gone). Never auto-delete after a spurious abort.
+          const stillInGallery = imagesRef.current.some(
+            (c) => c.id === tempId || c.id === shell.id
+          );
+          if (!stillInGallery) {
+            try {
+              await api.deleteCard(shell.id);
+            } catch {
+              /* ignore */
+            }
           }
           return;
         }
@@ -638,7 +771,11 @@ export default function App() {
           if (JSON.stringify(local.tags || []) !== JSON.stringify(tags)) {
             patch.tags = local.tags;
           }
-          if (local.additionalNotes) patch.additionalNotes = local.additionalNotes;
+          if (
+            (local.additionalNotes || '') !== (additionalNotes || '')
+          ) {
+            patch.additionalNotes = local.additionalNotes || '';
+          }
           if (local.isFavorite) patch.isFavorite = true;
           if (Object.keys(patch).length > 0) {
             void api.updateCard(shell.id, patch).then(({ card }) => {
@@ -721,33 +858,46 @@ export default function App() {
 
         // Preserve any edits made during upload over the upload response
         const latest = imagesRef.current.find((c) => c.id === shellId);
-        revokeIfBlobUrl(localUrl);
+        const serverUrl = card.url?.trim() || '';
         upsertCard({
           ...card,
+          // Keep blob until we have a real server media URL (avoids blank/pulsing logo)
+          url: serverUrl || localUrl,
           uploadPending: false,
           title: latest?.title ?? card.title,
           tags: latest?.tags ?? card.tags,
           additionalNotes: latest?.additionalNotes ?? card.additionalNotes,
           isFavorite: latest?.isFavorite ?? card.isFavorite,
         });
+        if (serverUrl && localUrl.startsWith('blob:')) {
+          // Revoke after React has swapped the <img> src
+          window.setTimeout(() => revokeIfBlobUrl(localUrl), 2500);
+        }
       } catch (err) {
         if (abort.signal.aborted) return;
         console.error('Upload failed', err);
-        revokeIfBlobUrl(localUrl);
-        setImages((prev) =>
-          prev.filter((c) => c.id !== tempId && c.id !== shellId)
-        );
+        // Keep the card — don't delete on failed file upload (shell is still valid)
+        const keepId = shellId || tempId;
+        setImages((prev) => {
+          const local = prev.find((c) => c.id === tempId || c.id === shellId);
+          const without = prev.filter((c) => c.id !== tempId && c.id !== shellId);
+          if (!local) return prev;
+          return [
+            {
+              ...local,
+              id: keepId,
+              url: localUrl,
+              uploadPending: false,
+              updatedAt: Date.now(),
+            },
+            ...without,
+          ];
+        });
         setSelectedImageId((sel) =>
-          sel === tempId || sel === shellId ? null : sel
+          sel === tempId || sel === shellId ? keepId : sel
         );
-        if (shellId) {
-          try {
-            await api.deleteCard(shellId);
-          } catch {
-            /* ignore */
-          }
-        }
         const raw = err instanceof Error ? err.message : 'Upload failed';
+        if (err instanceof Error && err.name === 'AbortError') return;
         const needsGoogleReconnect =
           /invalid_grant|google_reauth|Google Drive expir|Connect Google Drive/i.test(raw);
         if (needsGoogleReconnect) {
@@ -756,7 +906,11 @@ export default function App() {
             'Connexion Google Drive expirée — ouvre les paramètres et reconnecte ton compte.'
           );
         } else {
-          setLoadError(raw);
+          setLoadError(
+            raw === 'Upload failed'
+              ? 'Upload fichier échoué — la card est gardée, réessaie plus tard.'
+              : raw
+          );
         }
       } finally {
         uploadAbortByCardIdRef.current.delete(tempId);
@@ -764,7 +918,8 @@ export default function App() {
       }
     };
 
-    await Promise.all(fileArray.map((file) => processOne(file)));
+    // Shared / single-file with meta: apply opts to each file (usually one)
+    await Promise.all(fileArray.map((file) => processOne(file, opts)));
   };
 
   const handleAddFromUrl = async (url: string, title?: string, tags?: string[]) => {
@@ -814,6 +969,23 @@ export default function App() {
 
   const handleUpdateNote = useCallback(
     async (id: string, data: { title?: string; markdown?: string; additionalNotes?: string }) => {
+      const current = imagesRef.current.find((i) => i.id === id);
+      if (!current) return;
+      const nextTitle = data.title !== undefined ? data.title : current.title;
+      const nextMarkdown =
+        data.markdown !== undefined ? data.markdown : current.markdown;
+      const nextNotes =
+        data.additionalNotes !== undefined
+          ? data.additionalNotes
+          : current.additionalNotes || '';
+      if (
+        nextTitle === current.title &&
+        (nextMarkdown || '') === (current.markdown || '') &&
+        nextNotes === (current.additionalNotes || '')
+      ) {
+        return;
+      }
+
       setImages((prev) =>
         prev.map((item) =>
           item.id === id
@@ -824,6 +996,7 @@ export default function App() {
                 ...(data.additionalNotes !== undefined
                   ? { additionalNotes: data.additionalNotes }
                   : {}),
+                updatedAt: Date.now(),
               }
             : item
         )
@@ -842,6 +1015,13 @@ export default function App() {
   const drawingSaveChainRef = useRef<Promise<void>>(Promise.resolve());
 
   const handleUpdateDrawing = useCallback((id: string, drawingData: string | null) => {
+    if (isClientPendingId(id)) return;
+
+    const current = imagesRef.current.find((i) => i.id === id);
+    // Opening a card with no drawing used to fire null and hit DELETE /drawing —
+    // the response then overwrote the local blob URL and the card looked gone.
+    if (drawingData === null && !current?.drawingData) return;
+
     setImages((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
@@ -858,25 +1038,23 @@ export default function App() {
       .then(async () => {
         try {
           const { card } = await api.updateCardDrawing(id, drawingData);
-          setImages((prev) =>
-            prev.map((item) => {
-              if (item.id !== id) return item;
-              // A newer local stroke may have landed while this upload ran.
-              if (
-                drawingData &&
-                drawingData.startsWith('data:') &&
-                item.drawingData?.startsWith('data:') &&
-                item.drawingData !== drawingData
-              ) {
-                return { ...item, ...card, drawingData: item.drawingData };
-              }
-              return {
-                ...item,
-                ...card,
-                drawingData: card.drawingData ?? item.drawingData,
-              };
-            })
-          );
+          const latest = imagesRef.current.find((i) => i.id === id);
+          // Preserve blob preview / pending upload — never blind-spread server card
+          let nextDrawing = card.drawingData ?? latest?.drawingData;
+          if (
+            drawingData &&
+            drawingData.startsWith('data:') &&
+            latest?.drawingData?.startsWith('data:') &&
+            latest.drawingData !== drawingData
+          ) {
+            nextDrawing = latest.drawingData;
+          } else if (drawingData) {
+            nextDrawing = card.drawingData ?? drawingData;
+          }
+          upsertCard({
+            ...card,
+            ...(nextDrawing ? { drawingData: nextDrawing } : {}),
+          });
         } catch (err) {
           console.error('Drawing save failed', err);
           setLoadError(
@@ -884,7 +1062,7 @@ export default function App() {
           );
         }
       });
-  }, []);
+  }, [upsertCard]);
 
   const handleCreateFolder = useCallback(async (name: string, icon: string) => {
     const { folder } = await api.createFolder(name, icon);
@@ -1008,6 +1186,7 @@ export default function App() {
   const handleToggleFavorite = useCallback(
     async (id: string, e: React.MouseEvent) => {
       e.stopPropagation();
+      if (isGalleryPointerGuarded()) return;
       const current = images.find((i) => i.id === id);
       if (!current) return;
       const next = !current.isFavorite;
@@ -1022,12 +1201,11 @@ export default function App() {
         console.error(err);
       }
     },
-    [images, upsertCard]
+    [images, upsertCard, isGalleryPointerGuarded]
   );
 
-  const handleDeleteImage = useCallback(
-    async (id: string, e: React.MouseEvent) => {
-      e.stopPropagation();
+  const performDeleteImage = useCallback(
+    async (id: string) => {
       const abort = uploadAbortByCardIdRef.current.get(id);
       if (abort) {
         abort.abort();
@@ -1045,6 +1223,24 @@ export default function App() {
       }
     },
     [selectedImageId]
+  );
+
+  const handleDeleteImage = useCallback(
+    (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (isGalleryPointerGuarded()) return;
+      setPendingDeleteId(id);
+    },
+    [isGalleryPointerGuarded]
+  );
+
+  const handleSelectImage = useCallback(
+    (img: ImageItem) => {
+      if (isGalleryPointerGuarded()) return;
+      setSelectedImageId(img.id);
+    },
+    [isGalleryPointerGuarded]
   );
 
   const handleAddTag = async (id: string, newTag: string) => {
@@ -1087,6 +1283,9 @@ export default function App() {
 
   const showSelectionDock = isCardDragging || selectionDockIds.length > 0;
 
+  /** Preserve masonry positions while a detail modal is open (avoids exit/enter thrash). */
+  const galleryOrderIdsRef = useRef<string[]>([]);
+
   const filteredImages = useMemo(() => {
     const filtered = images.filter((img) => {
       if (isFavoriteFilterActive && !img.isFavorite) return false;
@@ -1118,10 +1317,41 @@ export default function App() {
       }
       return true;
     });
-    return filtered.sort(
+
+    const byId = new Map(filtered.map((img) => [img.id, img]));
+
+    if (selectedImageId && galleryOrderIdsRef.current.length > 0) {
+      const ordered: ImageItem[] = [];
+      for (const id of galleryOrderIdsRef.current) {
+        const item = byId.get(id);
+        if (item) {
+          ordered.push(item);
+          byId.delete(id);
+        }
+      }
+      // Brand-new cards (e.g. upload while modal open) stay at the front
+      const newcomers = filtered.filter((img) => byId.has(img.id));
+      return [...newcomers, ...ordered];
+    }
+
+    const sorted = [...filtered].sort(
       (a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt)
     );
-  }, [images, isFavoriteFilterActive, selectedFolderId, searchQuery, activeTagFilters]);
+    galleryOrderIdsRef.current = sorted.map((img) => img.id);
+    return sorted;
+  }, [
+    images,
+    isFavoriteFilterActive,
+    selectedFolderId,
+    searchQuery,
+    activeTagFilters,
+    selectedImageId,
+  ]);
+
+  // Reset gallery order only when filters change — not when closing a detail modal
+  useEffect(() => {
+    galleryOrderIdsRef.current = [];
+  }, [isFavoriteFilterActive, selectedFolderId, searchQuery, activeTagFilters]);
 
   const selectedItem = useMemo(
     () => images.find((img) => img.id === selectedImageId) || null,
@@ -1387,12 +1617,12 @@ export default function App() {
         onSwitchAccounts={() => setIsSwitcherOpen(true)}
       />
 
-      <main>
+      <main className={galleryPointerLocked ? 'pointer-events-none' : undefined}>
         <MasonryGrid
           images={filteredImages}
           allItems={images}
           columnCountOverride={columnCount}
-          onSelectImage={(img) => setSelectedImageId(img.id)}
+          onSelectImage={handleSelectImage}
           onToggleFavorite={handleToggleFavorite}
           onDeleteImage={handleDeleteImage}
           onOpenUpload={() => setIsAddModalOpen(true)}
@@ -1426,7 +1656,7 @@ export default function App() {
 
       <ImageModal
         image={selectedImage}
-        onClose={() => setSelectedImageId(null)}
+        onClose={closeDetailModal}
         onToggleFavorite={handleToggleFavorite}
         onDelete={handleDeleteImage}
         onAddTag={handleAddTag}
@@ -1441,7 +1671,7 @@ export default function App() {
 
       <NoteModal
         note={selectedNote}
-        onClose={() => setSelectedImageId(null)}
+        onClose={closeDetailModal}
         onToggleFavorite={handleToggleFavorite}
         onDelete={handleDeleteImage}
         onAddTag={handleAddTag}
@@ -1454,7 +1684,7 @@ export default function App() {
       <MoodboardModal
         moodboard={selectedMoodboard}
         allItems={images}
-        onClose={() => setSelectedImageId(null)}
+        onClose={closeDetailModal}
         onUpdateMoodboard={handleUpdateMoodboard}
         onUpdateDrawing={handleUpdateDrawing}
         onCardUpdated={upsertCard}
@@ -1462,10 +1692,51 @@ export default function App() {
 
       <AddImageModal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
+        onClose={() => {
+          armGalleryPointerGuard();
+          setIsAddModalOpen(false);
+        }}
         onAddFromUrl={(url, title, tags) => void handleAddFromUrl(url, title, tags)}
         onAddFiles={(files) => void handleProcessFiles(files)}
         onAddNote={(md, title, tags) => void handleAddNote(md, title, tags)}
+      />
+
+      <ShareImageModal
+        draft={shareDraft}
+        suggestedTags={recentTags}
+        defaultTags={activeTagFilters}
+        onClose={() => {
+          armGalleryPointerGuard();
+          setShareDraft(null);
+        }}
+        onConfirm={({ file, title, tags, additionalNotes }) => {
+          armGalleryPointerGuard();
+          setShareDraft(null);
+          void handleProcessFiles([file], { title, tags, additionalNotes });
+        }}
+      />
+
+      <ConfirmDialog
+        open={pendingDeleteId != null}
+        title={
+          pendingDeleteId
+            ? (() => {
+                const card = images.find((i) => i.id === pendingDeleteId);
+                const label = card?.title?.trim();
+                return label ? `Supprimer « ${label} » ?` : 'Supprimer cette card ?';
+              })()
+            : 'Supprimer cette card ?'
+        }
+        description="Cette action est définitive. La card sera retirée de ta galerie."
+        confirmLabel="Supprimer"
+        cancelLabel="Annuler"
+        tone="danger"
+        onCancel={() => setPendingDeleteId(null)}
+        onConfirm={() => {
+          const id = pendingDeleteId;
+          setPendingDeleteId(null);
+          if (id) void performDeleteImage(id);
+        }}
       />
     </div>
   );

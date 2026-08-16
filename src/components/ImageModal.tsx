@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
@@ -50,10 +50,12 @@ export const ImageModal: React.FC<ImageModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [additionalNotes, setAdditionalNotes] = useState('');
+  const skipNotesSaveRef = useRef(true);
 
   useEffect(() => {
     if (image) {
       setAdditionalNotes(image.additionalNotes || '');
+      skipNotesSaveRef.current = true;
     }
   }, [image?.id]);
 
@@ -78,6 +80,10 @@ export const ImageModal: React.FC<ImageModalProps> = ({
 
   useEffect(() => {
     if (!image) return;
+    if (skipNotesSaveRef.current) {
+      skipNotesSaveRef.current = false;
+      return;
+    }
     if (additionalNotes === (image.additionalNotes || '')) return;
 
     const timer = window.setTimeout(() => {
@@ -85,7 +91,10 @@ export const ImageModal: React.FC<ImageModalProps> = ({
     }, 400);
 
     return () => window.clearTimeout(timer);
-  }, [additionalNotes, image, onUpdateAdditionalNotes]);
+    // Intentionally not depending on full `image` — parent upserts (thumb refresh)
+    // must not re-trigger autosave.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [additionalNotes, image?.id, image?.additionalNotes, onUpdateAdditionalNotes]);
 
   if (!image) return null;
 
@@ -295,7 +304,6 @@ export const ImageModal: React.FC<ImageModalProps> = ({
             type="button"
             onClick={(e) => {
               onDelete(image.id, e);
-              onClose();
             }}
             className="p-2.5 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all"
             title="Supprimer l'image"

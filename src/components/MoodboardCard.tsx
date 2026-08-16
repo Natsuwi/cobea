@@ -7,6 +7,7 @@ import { CardDragGhost } from './CardDragGhost';
 import { MarkdownPreview } from './MarkdownPreview';
 import { FileCardPreview, isDisplayableImageItem } from './FileCardPreview';
 import { RefreshableThumb } from './RefreshableThumb';
+import { useIsMobileViewport } from '../hooks/useIsMobileViewport';
 
 interface MoodboardCardProps {
   item: ImageItem;
@@ -27,6 +28,7 @@ export const MoodboardCard: React.FC<MoodboardCardProps> = ({
   onDragStartItem,
   onDragEndItem,
 }) => {
+  const isMobile = useIsMobileViewport();
   const { cardRef, preview, isDragging, handleDragStart, suppressClickIfDragged } =
     useCardDragPreview({ onDragStartItem, onDragEndItem });
 
@@ -36,22 +38,22 @@ export const MoodboardCard: React.FC<MoodboardCardProps> = ({
     <>
       <motion.div
         ref={cardRef}
-        layout={!isDragging}
+        layout={false}
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: isDragging ? 0.35 : 1, y: 0, scale: isDragging ? 0.98 : 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
         className="group relative overflow-hidden rounded-[1.75rem] md:rounded-[2rem] bg-zinc-100 dark:bg-zinc-800/60 border border-black/5 dark:border-white/5 transition-shadow duration-500 hover:shadow-2xl hover:shadow-black/10 dark:hover:shadow-black/50"
       >
         <div
-          draggable
-          onDragStart={(e) => handleDragStart(e, item.id)}
+          draggable={!isMobile}
+          onDragStart={isMobile ? undefined : (e) => handleDragStart(e, item.id)}
           onClick={(e) => {
             if (isDragging) return;
             suppressClickIfDragged(e);
+            if (e.defaultPrevented) return;
             onSelect(item);
           }}
-          className="cursor-grab active:cursor-grabbing"
+          className={isMobile ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'}
         >
           <div
             className="relative w-full moodboard-canvas-bg"
@@ -99,7 +101,7 @@ export const MoodboardCard: React.FC<MoodboardCardProps> = ({
             </div>
           </div>
 
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none flex flex-col justify-between p-4 md:p-6">
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 md:group-hover:opacity-100 transition-all duration-300 pointer-events-none flex flex-col justify-between p-4 md:p-6">
             <div className="flex justify-between items-start pointer-events-auto">
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/15 backdrop-blur-sm text-[10px] font-medium text-white">
                 <LayoutGrid className="w-3 h-3" />

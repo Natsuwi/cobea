@@ -54,12 +54,29 @@ export default defineConfig(() => {
               purpose: 'maskable',
             },
           ],
+          // Android: Share image → Cobea (proxied to API — avoids nginx 405 on POST)
+          share_target: {
+            action: '/api/share-target',
+            method: 'POST',
+            enctype: 'multipart/form-data',
+            params: {
+              title: 'title',
+              text: 'text',
+              url: 'url',
+              files: [
+                {
+                  name: 'media',
+                  accept: ['image/*'],
+                },
+              ],
+            },
+          },
         },
         workbox: {
           // App shell + hashed assets
           globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff2,json}'],
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/api\//],
+          navigateFallbackDenylist: [/^\/api\//, /^\/share-target$/],
           runtimeCaching: [
             {
               // Never cache API / auth / media blobs through the SW

@@ -11,6 +11,7 @@ import { WebLinkCardPreview } from './WebLinkCardPreview';
 import { CardKindBadge } from './CardKindBadge';
 import { CobeaLogoMark } from './CobeaBrand';
 import { externalUrlForCard, isWebPageKind } from '../lib/cardKinds';
+import { useIsMobileViewport } from '../hooks/useIsMobileViewport';
 
 export { ITEM_DRAG_MIME };
 
@@ -33,6 +34,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
   onDragEndItem,
   onCardUpdated,
 }) => {
+  const isMobile = useIsMobileViewport();
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const { cardRef, preview, isDragging, handleDragStart, suppressClickIfDragged } =
@@ -70,11 +72,10 @@ export const ImageCard: React.FC<ImageCardProps> = ({
     <>
       <motion.div
         ref={cardRef}
-        layout={!isDragging}
+        layout={false}
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: isDragging ? 0.35 : 1, y: 0, scale: isDragging ? 0.98 : 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
         className="group relative overflow-hidden rounded-[1.75rem] md:rounded-[2rem] bg-zinc-200/40 dark:bg-zinc-800/40 border border-black/5 dark:border-white/5 transition-shadow duration-500 hover:shadow-2xl hover:shadow-black/10 dark:hover:shadow-black/50"
       >
         <div className="absolute top-2.5 left-2.5 z-20 pointer-events-none">
@@ -82,14 +83,17 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         </div>
 
         <div
-          draggable
-          onDragStart={(e) => handleDragStart(e, image.id)}
+          draggable={!isMobile}
+          onDragStart={
+            isMobile ? undefined : (e) => handleDragStart(e, image.id)
+          }
           onClick={(e) => {
             if (isDragging) return;
             suppressClickIfDragged(e);
+            if (e.defaultPrevented) return;
             onSelect(image);
           }}
-          className="cursor-grab active:cursor-grabbing"
+          className={isMobile ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'}
         >
           {showAsWebLink && externalUrl ? (
             <div
@@ -175,7 +179,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
             </div>
           )}
 
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none flex flex-col justify-between p-4 md:p-6">
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent opacity-0 md:group-hover:opacity-100 transition-all duration-300 pointer-events-none flex flex-col justify-between p-4 md:p-6">
             <div className="flex items-center justify-between w-full pointer-events-auto">
               {image.tags && image.tags.length > 0 ? (
                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wider uppercase text-white/95 bg-black/30 dark:bg-black/50 backdrop-blur-xl px-3 py-1 rounded-full border border-white/10 shadow-sm">

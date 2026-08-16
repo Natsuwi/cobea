@@ -5,6 +5,7 @@ import { ImageItem } from '../types';
 import { MarkdownPreview } from './MarkdownPreview';
 import { useCardDragPreview } from '../hooks/useCardDragPreview';
 import { CardDragGhost } from './CardDragGhost';
+import { useIsMobileViewport } from '../hooks/useIsMobileViewport';
 
 interface NoteCardProps {
   item: ImageItem;
@@ -23,6 +24,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
   onDragStartItem,
   onDragEndItem,
 }) => {
+  const isMobile = useIsMobileViewport();
   const { cardRef, preview, isDragging, handleDragStart, suppressClickIfDragged } =
     useCardDragPreview({ onDragStartItem, onDragEndItem });
 
@@ -30,22 +32,22 @@ export const NoteCard: React.FC<NoteCardProps> = ({
     <>
       <motion.div
         ref={cardRef}
-        layout={!isDragging}
+        layout={false}
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: isDragging ? 0.35 : 1, y: 0, scale: isDragging ? 0.98 : 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
         className="group relative overflow-hidden rounded-[1.75rem] md:rounded-[2rem] bg-white dark:bg-zinc-900 border border-black/5 dark:border-white/5 transition-shadow duration-500 hover:shadow-2xl hover:shadow-black/10 dark:hover:shadow-black/50"
       >
         <div
-          draggable
-          onDragStart={(e) => handleDragStart(e, item.id)}
+          draggable={!isMobile}
+          onDragStart={isMobile ? undefined : (e) => handleDragStart(e, item.id)}
           onClick={(e) => {
             if (isDragging) return;
             suppressClickIfDragged(e);
+            if (e.defaultPrevented) return;
             onSelect(item);
           }}
-          className="cursor-grab active:cursor-grabbing p-5 md:p-6 space-y-3 min-h-[160px]"
+          className={`${isMobile ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'} p-5 md:p-6 space-y-3 min-h-[160px]`}
         >
           <div className="flex items-center justify-between gap-2">
             <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold tracking-wider uppercase text-accent-text bg-accent/10 px-2.5 py-1 rounded-full">
@@ -53,7 +55,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
               Note
             </span>
 
-            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="hidden md:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
                 type="button"
                 onClick={(e) => onToggleFavorite(item.id, e)}

@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence } from 'motion/react';
 import { ImageItem, isNoteItem, isMoodboardItem } from '../types';
 import { ImageCard } from './ImageCard';
 import { NoteCard } from './NoteCard';
@@ -94,15 +93,23 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
   onDragEndItem,
   onCardUpdated,
 }) => {
-  const listKey = useMemo(() => images.map((i) => i.id).join('\0'), [images]);
+  // Membership only (sorted) — order changes must NOT reset pagination
+  const membershipKey = useMemo(() => {
+    const ids = images.map((i) => i.id).sort();
+    return `${ids.length}:${ids.join('\0')}`;
+  }, [images]);
+
   const [visibleCount, setVisibleCount] = useState(() =>
     Math.min(PAGE_SIZE, images.length)
   );
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setVisibleCount(Math.min(PAGE_SIZE, images.length));
-  }, [listKey, images.length]);
+    setVisibleCount((prev) => {
+      const next = Math.min(Math.max(prev, PAGE_SIZE), images.length);
+      return next > 0 ? next : Math.min(PAGE_SIZE, images.length);
+    });
+  }, [membershipKey, images.length]);
 
   const visibleImages = useMemo(
     () => images.slice(0, visibleCount),
@@ -186,21 +193,19 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
 
         {columns.map((columnImages, colIndex) => (
           <div key={`col-${colIndex}`} className="flex flex-col gap-4 md:gap-6">
-            <AnimatePresence>
-              {columnImages.map((image) => (
-                <GalleryCard
-                  key={image.id}
-                  item={image}
-                  allItems={allItems}
-                  onSelect={onSelectImage}
-                  onToggleFavorite={onToggleFavorite}
-                  onDelete={onDeleteImage}
-                  onDragStartItem={onDragStartItem}
-                  onDragEndItem={onDragEndItem}
-                  onCardUpdated={onCardUpdated}
-                />
-              ))}
-            </AnimatePresence>
+            {columnImages.map((image) => (
+              <GalleryCard
+                key={image.id}
+                item={image}
+                allItems={allItems}
+                onSelect={onSelectImage}
+                onToggleFavorite={onToggleFavorite}
+                onDelete={onDeleteImage}
+                onDragStartItem={onDragStartItem}
+                onDragEndItem={onDragEndItem}
+                onCardUpdated={onCardUpdated}
+              />
+            ))}
           </div>
         ))}
       </div>
@@ -233,21 +238,19 @@ function renderColumn(
 ) {
   return (
     <div className="flex flex-col gap-4">
-      <AnimatePresence>
-        {images.map((img) => (
-          <GalleryCard
-            key={img.id}
-            item={img}
-            allItems={allItems}
-            onSelect={onSelectImage}
-            onToggleFavorite={onToggleFavorite}
-            onDelete={onDeleteImage}
-            onDragStartItem={onDragStartItem}
-            onDragEndItem={onDragEndItem}
-            onCardUpdated={onCardUpdated}
-          />
-        ))}
-      </AnimatePresence>
+      {images.map((img) => (
+        <GalleryCard
+          key={img.id}
+          item={img}
+          allItems={allItems}
+          onSelect={onSelectImage}
+          onToggleFavorite={onToggleFavorite}
+          onDelete={onDeleteImage}
+          onDragStartItem={onDragStartItem}
+          onDragEndItem={onDragEndItem}
+          onCardUpdated={onCardUpdated}
+        />
+      ))}
     </div>
   );
 }

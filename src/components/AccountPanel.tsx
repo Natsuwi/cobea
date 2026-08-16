@@ -25,6 +25,7 @@ import { COLUMN_OPTIONS } from '../lib/columnsPref';
 import { importMyMindFolder, type MyMindImportProgress } from '../lib/mymindImport';
 import { getClientBuildId } from '../lib/appUpdate';
 import { CobeaBrand } from './CobeaBrand';
+import { ConfirmDialog } from './ConfirmDialog';
 import { DriveFolderPicker } from './DriveFolderPicker';
 import { GoogleOAuthGuide } from './GoogleOAuthGuide';
 
@@ -89,6 +90,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
 }) => {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
   const [setupOpen, setSetupOpen] = useState(false);
@@ -240,13 +242,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
   };
 
   const handleDeleteAllCards = async () => {
-    if (
-      !window.confirm(
-        'Supprimer toutes les cards de la galerie ?\n\nGoogle Drive ne sera pas modifié.'
-      )
-    ) {
-      return;
-    }
+    setConfirmDeleteAll(false);
     setBusy(true);
     setMessage(null);
     try {
@@ -890,7 +886,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => void handleDeleteAllCards()}
+                  onClick={() => setConfirmDeleteAll(true)}
                   className="flex items-center justify-center gap-2 w-full rounded-xl border border-rose-200 dark:border-rose-500/30 bg-rose-50/80 dark:bg-rose-950/30 py-2.5 text-sm font-medium text-rose-700 dark:text-rose-300 hover:bg-rose-100/80 dark:hover:bg-rose-950/50 disabled:opacity-50"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -932,6 +928,17 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={confirmDeleteAll}
+        title="Supprimer toutes les cards ?"
+        description="Toutes les cards de la galerie seront effacées. Google Drive ne sera pas modifié."
+        confirmLabel="Tout supprimer"
+        cancelLabel="Annuler"
+        tone="danger"
+        onCancel={() => setConfirmDeleteAll(false)}
+        onConfirm={() => void handleDeleteAllCards()}
+      />
     </>
   );
 };

@@ -329,23 +329,44 @@ cardsRouter.patch('/:id', upload.single('file'), async (req: AuthRequest, res) =
         return;
       }
       const j = parsed.data;
-      if (j.title !== undefined) data.title = j.title;
-      if (j.markdown !== undefined) data.markdown = j.markdown;
-      if (j.additionalNotes !== undefined) data.additionalNotes = j.additionalNotes;
-      if (j.dominantColor !== undefined) data.dominantColor = j.dominantColor;
-      if (j.url !== undefined) data.url = j.url;
-      if (j.isFavorite !== undefined) data.isFavorite = j.isFavorite;
-      if (j.tags !== undefined) data.tags = j.tags;
-      if (j.folderId !== undefined) {
+      if (j.title !== undefined && j.title !== existing.title) data.title = j.title;
+      if (j.markdown !== undefined && j.markdown !== (existing.markdown ?? undefined)) {
+        data.markdown = j.markdown;
+      }
+      if (
+        j.additionalNotes !== undefined &&
+        j.additionalNotes !== (existing.additionalNotes ?? null)
+      ) {
+        data.additionalNotes = j.additionalNotes;
+      }
+      if (
+        j.dominantColor !== undefined &&
+        j.dominantColor !== (existing.dominantColor ?? null)
+      ) {
+        data.dominantColor = j.dominantColor;
+      }
+      if (j.url !== undefined && j.url !== existing.url) data.url = j.url;
+      if (j.isFavorite !== undefined && j.isFavorite !== existing.isFavorite) {
+        data.isFavorite = j.isFavorite;
+      }
+      if (
+        j.tags !== undefined &&
+        JSON.stringify(j.tags) !== JSON.stringify(existing.tags ?? [])
+      ) {
+        data.tags = j.tags;
+      }
+      if (j.folderId !== undefined && j.folderId !== existing.folderId) {
         data.folder =
           j.folderId === null ? { disconnect: true } : { connect: { id: j.folderId } };
       }
       if (j.moodboardPlacements !== undefined) {
         data.moodboardPlacements = j.moodboardPlacements;
       }
-      if (j.width !== undefined) data.width = j.width;
-      if (j.height !== undefined) data.height = j.height;
-      if (j.aspectRatio !== undefined) data.aspectRatio = j.aspectRatio;
+      if (j.width !== undefined && j.width !== existing.width) data.width = j.width;
+      if (j.height !== undefined && j.height !== existing.height) data.height = j.height;
+      if (j.aspectRatio !== undefined && j.aspectRatio !== existing.aspectRatio) {
+        data.aspectRatio = j.aspectRatio;
+      }
 
       if (j.drawingData !== undefined) {
         if (j.drawingData === null) {
@@ -413,11 +434,17 @@ cardsRouter.patch('/:id', upload.single('file'), async (req: AuthRequest, res) =
       if (body.title) data.title = body.title;
     }
 
-    const card = await prisma.card.update({
-      where: { id: existing.id },
-      data,
-      include: { file: true },
-    });
+    const hasCardFieldUpdates = Object.keys(data).length > 0;
+    const card = hasCardFieldUpdates
+      ? await prisma.card.update({
+          where: { id: existing.id },
+          data,
+          include: { file: true },
+        })
+      : await prisma.card.findFirstOrThrow({
+          where: { id: existing.id },
+          include: { file: true },
+        });
 
     res.json({ card: serializeCard(card) });
   } catch (err) {

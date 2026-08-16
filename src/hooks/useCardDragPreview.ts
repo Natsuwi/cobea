@@ -22,6 +22,7 @@ function clamp(n: number, min: number, max: number) {
 
 /**
  * Native DnD with a custom mini-card ghost that tilts left/right with movement.
+ * Uses a movement threshold so a tap never counts as a drag (esp. Android).
  */
 export function useCardDragPreview(options?: {
   onDragStartItem?: (id: string) => void;
@@ -32,6 +33,7 @@ export function useCardDragPreview(options?: {
   const lastXRef = useRef(0);
   const tiltRef = useRef(0);
   const didDragRef = useRef(false);
+  const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
   const onStartRef = useRef(options?.onDragStartItem);
   const onEndRef = useRef(options?.onDragEndItem);
   onStartRef.current = options?.onDragStartItem;
@@ -55,7 +57,8 @@ export function useCardDragPreview(options?: {
     const scale = CARD_DRAG_PREVIEW_SCALE;
     lastXRef.current = e.clientX;
     tiltRef.current = 0;
-    didDragRef.current = true;
+    didDragRef.current = false;
+    dragOriginRef.current = { x: e.clientX, y: e.clientY };
 
     setPreview({
       x: e.clientX,
@@ -73,8 +76,16 @@ export function useCardDragPreview(options?: {
   useEffect(() => {
     if (!preview) return;
 
+    const DRAG_THRESHOLD_PX = 10;
+
     const updateFromPoint = (clientX: number, clientY: number) => {
       if (clientX === 0 && clientY === 0) return;
+
+      const origin = dragOriginRef.current;
+      if (origin && !didDragRef.current) {
+        const dist = Math.hypot(clientX - origin.x, clientY - origin.y);
+        if (dist >= DRAG_THRESHOLD_PX) didDragRef.current = true;
+      }
 
       const dx = clientX - lastXRef.current;
       lastXRef.current = clientX;
@@ -109,6 +120,7 @@ export function useCardDragPreview(options?: {
       cleaned = true;
       setPreview(null);
       tiltRef.current = 0;
+      dragOriginRef.current = null;
       onEndRef.current?.();
       window.setTimeout(() => {
         didDragRef.current = false;
@@ -119,12 +131,17 @@ export function useCardDragPreview(options?: {
     window.addEventListener('drag', onDrag);
     window.addEventListener('dragend', cleanup);
     window.addEventListener('drop', cleanup);
+    // Safety: Android sometimes skips dragend after a tap-initiated dragstart
+    window.addEventListener('pointerup', cleanup);
+    window.addEventListener('pointercancel', cleanup);
 
     return () => {
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('drag', onDrag);
       window.removeEventListener('dragend', cleanup);
       window.removeEventListener('drop', cleanup);
+      window.removeEventListener('pointerup', cleanup);
+      window.removeEventListener('pointercancel', cleanup);
     };
   }, [!!preview]);
 
@@ -138,7 +155,7 @@ export function useCardDragPreview(options?: {
   return {
     cardRef,
     preview,
-    isDragging: !!preview,
+    isDragging: !!preview && didDragRef.current,
     handleDragStart,
     suppressClickIfDragged,
   };

@@ -543,14 +543,23 @@ export async function refreshDriveThumbnail(
     },
   });
 
-  return prisma.card.update({
+  // Do NOT bump card.updatedAt — opening / thumb refresh is not a content edit.
+  // Only fill missing dimensions once (Prisma @updatedAt would otherwise reorder the gallery).
+  const dimData: { width?: number; height?: number; aspectRatio?: number } = {};
+  if (width && !card.width) dimData.width = width;
+  if (height && !card.height) dimData.height = height;
+  if (aspectRatio && !card.aspectRatio) dimData.aspectRatio = aspectRatio;
+
+  if (Object.keys(dimData).length > 0) {
+    return prisma.card.update({
+      where: { id: card.id },
+      data: dimData,
+      include: { file: true },
+    });
+  }
+
+  return prisma.card.findFirstOrThrow({
     where: { id: card.id },
-    data: {
-      updatedAt: new Date(),
-      ...(width ? { width } : {}),
-      ...(height ? { height } : {}),
-      ...(aspectRatio ? { aspectRatio } : {}),
-    },
     include: { file: true },
   });
 }

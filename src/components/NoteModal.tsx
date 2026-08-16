@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
@@ -47,6 +47,7 @@ export const NoteModal: React.FC<NoteModalProps> = ({
   const [additionalNotes, setAdditionalNotes] = useState('');
   const [saved, setSaved] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const skipSaveRef = useRef(true);
 
   useEffect(() => {
     if (note) {
@@ -55,6 +56,7 @@ export const NoteModal: React.FC<NoteModalProps> = ({
       setAdditionalNotes(note.additionalNotes || '');
       setSaved(false);
       setIsFullscreen(false);
+      skipSaveRef.current = true;
     }
   }, [note?.id]);
 
@@ -99,6 +101,10 @@ export const NoteModal: React.FC<NoteModalProps> = ({
 
   useEffect(() => {
     if (!note) return;
+    if (skipSaveRef.current) {
+      skipSaveRef.current = false;
+      return;
+    }
     if (
       title === (note.title || '') &&
       markdown === (note.markdown || '') &&
@@ -208,7 +214,6 @@ export const NoteModal: React.FC<NoteModalProps> = ({
             type="button"
             onClick={(e) => {
               onDelete(note.id, e);
-              handleClose();
             }}
             className={`${isMobile ? 'flex-1 flex items-center justify-center gap-2' : ''} p-2.5 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all text-xs font-medium`}
             title="Supprimer"

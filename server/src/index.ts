@@ -4,6 +4,7 @@ import { env } from './lib/env.js';
 import { authRouter } from './routes/auth.js';
 import { foldersRouter } from './routes/folders.js';
 import { cardsRouter } from './routes/cards.js';
+import { shareTargetRouter } from './routes/shareTarget.js';
 
 import { isEnvGoogleConfigured } from './storage/google.js';
 
@@ -28,6 +29,10 @@ app.get('/api/config', (_req, res) => {
     googleRedirectUri: env.GOOGLE_REDIRECT_URI,
   });
 });
+
+app.use('/api/share-target', shareTargetRouter);
+/** Legacy / nginx fallback path (same handler as /api/share-target) */
+app.use('/share-target', shareTargetRouter);
 
 app.use('/api/auth', authRouter);
 app.use('/api/folders', foldersRouter);

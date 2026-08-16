@@ -123,7 +123,7 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
   }, []);
 
   const restoreSnapshot = useCallback(
-    (data: string | null) => {
+    (data: string | null, opts?: { persist?: boolean }) => {
       const container = containerRef.current;
       const canvas = canvasRef.current;
       if (!container || !canvas) return;
@@ -139,7 +139,7 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
       if (!data) {
         lastExportedRef.current = null;
         setHasDrawing(false);
-        onDrawingChange(itemId, null);
+        if (opts?.persist) onDrawingChange(itemId, null);
         return;
       }
 
@@ -163,7 +163,7 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
         cx.drawImage(img, 0, 0, width, height);
         lastExportedRef.current = data;
         setHasDrawing(!isCanvasEmpty(c));
-        onDrawingChange(itemId, data);
+        if (opts?.persist) onDrawingChange(itemId, data);
       };
       img.onerror = () => {
         console.warn('[drawing] failed to load snapshot');
@@ -192,7 +192,7 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
     const current = captureSnapshot();
     const previous = undoStackRef.current.pop()!;
     redoStackRef.current.push(current);
-    restoreSnapshot(previous);
+    restoreSnapshot(previous, { persist: true });
     syncHistoryButtons();
   }, [captureSnapshot, restoreSnapshot, syncHistoryButtons]);
 
@@ -205,7 +205,7 @@ export const DetailDrawingLayer: React.FC<DetailDrawingLayerProps> = ({
     const current = captureSnapshot();
     const next = redoStackRef.current.pop()!;
     undoStackRef.current.push(current);
-    restoreSnapshot(next);
+    restoreSnapshot(next, { persist: true });
     syncHistoryButtons();
   }, [captureSnapshot, restoreSnapshot, syncHistoryButtons]);
 
