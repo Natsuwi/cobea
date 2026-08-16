@@ -405,6 +405,12 @@ cardsRouter.patch('/:id', upload.single('file'), async (req: AuthRequest, res) =
           size: toDbFileSize(fileMeta.size),
         },
       });
+
+      // Multipart fields (multer) — dimensions often arrive with the file upload
+      if (body.width) data.width = Number(body.width);
+      if (body.height) data.height = Number(body.height);
+      if (body.aspectRatio) data.aspectRatio = Number(body.aspectRatio);
+      if (body.title) data.title = body.title;
     }
 
     const card = await prisma.card.update({

@@ -35,6 +35,10 @@ export interface ImageItem {
   tags?: string[];
   dominantColor?: string;
   createdAt: number;
+  /** Last modification time (ms) — gallery sorts by this desc */
+  updatedAt?: number;
+  /** True while the file is still uploading (local preview may be a blob: URL) */
+  uploadPending?: boolean;
   isFavorite?: boolean;
   width?: number;
   height?: number;

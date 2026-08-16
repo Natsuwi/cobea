@@ -99,6 +99,7 @@ function buildCardPayload(
     tags: card.tags,
     dominantColor: card.dominantColor ?? undefined,
     createdAt: card.createdAt.getTime(),
+    updatedAt: card.updatedAt.getTime(),
     isFavorite: card.isFavorite,
     width: card.width ?? undefined,
     height: card.height ?? undefined,
@@ -149,7 +150,7 @@ export function serializeCard(card: CardWithFile) {
 export async function listSerializedCards(profileId: string) {
   const cards = await prisma.card.findMany({
     where: { profileId },
-    orderBy: { createdAt: 'desc' },
+    orderBy: { updatedAt: 'desc' },
     include: {
       file: {
         select: {

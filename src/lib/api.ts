@@ -400,6 +400,31 @@ export const api = {
     return { card: mapCard(r.card) };
   },
 
+  /** Attach / replace the main file on an existing card (multipart). */
+  uploadCardFile: async (
+    id: string,
+    file: File | Blob,
+    opts?: {
+      fileName?: string;
+      width?: number;
+      height?: number;
+      aspectRatio?: number;
+      signal?: AbortSignal;
+    }
+  ) => {
+    const fd = new FormData();
+    fd.append('file', file, opts?.fileName || 'upload.bin');
+    if (opts?.width != null) fd.append('width', String(opts.width));
+    if (opts?.height != null) fd.append('height', String(opts.height));
+    if (opts?.aspectRatio != null) fd.append('aspectRatio', String(opts.aspectRatio));
+    const r = await request<{ card: ImageItem }>(`/api/cards/${id}`, {
+      method: 'PATCH',
+      formData: fd,
+      signal: opts?.signal,
+    });
+    return { card: mapCard(r.card) };
+  },
+
   updateCard: async (
     id: string,
     data: Partial<{

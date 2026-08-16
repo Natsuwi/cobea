@@ -15,6 +15,7 @@ import { DetailDrawingLayer } from './drawing/DetailDrawingLayer';
 import { FileCardPreview, isDisplayableImageItem, isVideoItem } from './FileCardPreview';
 import { WebLinkCardPreview } from './WebLinkCardPreview';
 import { CardTagsEditor } from './CardTagsEditor';
+import { CobeaLogoMark } from './CobeaBrand';
 import { externalUrlForCard, isWebPageKind } from '../lib/cardKinds';
 import { useIsMobileViewport } from '../hooks/useIsMobileViewport';
 import { api } from '../lib/api';
@@ -173,6 +174,15 @@ export const ImageModal: React.FC<ImageModalProps> = ({
               <span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/55 text-white shadow-lg backdrop-blur-sm ring-1 ring-white/20">
                 <Play className="h-7 w-7 fill-current ml-1" />
               </span>
+            </div>
+          ) : null}
+          {image.uploadPending ? (
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/25 rounded-xl">
+              <CobeaLogoMark
+                className="w-14 h-14 text-white/85 animate-pulse drop-shadow-md"
+                title="Upload en cours"
+              />
+              <span className="text-xs font-medium text-white/80">Upload en cours…</span>
             </div>
           ) : null}
         </div>

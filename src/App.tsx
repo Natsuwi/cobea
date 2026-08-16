@@ -483,7 +483,9 @@ export default function App() {
   const recentTags = useMemo(() => {
     const ordered: string[] = [];
     const seen = new Set<string>();
-    const sorted = [...images].sort((a, b) => b.createdAt - a.createdAt);
+    const sorted = [...images].sort(
+      (a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt)
+    );
     for (const img of sorted) {
       for (const t of img.tags || []) {
         const key = t.toLowerCase();
@@ -520,28 +522,142 @@ export default function App() {
       const idx = prev.findIndex((c) => c.id === card.id);
       if (idx === -1) return [card, ...prev];
       const previous = prev[idx];
-      const next = [...prev];
       // Placement/title updates can return before a drawing save commits —
       // never drop a drawing the client already has.
       const merged: ImageItem = { ...previous, ...card };
       if (!card.drawingData && previous.drawingData) {
         merged.drawingData = previous.drawingData;
       }
-      next[idx] = merged;
-      return next;
+      // Keep local blob preview while file upload is still running
+      if (card.uploadPending === false) {
+        merged.uploadPending = false;
+      } else if (previous.uploadPending && previous.url.startsWith('blob:')) {
+        merged.url = previous.url;
+        merged.uploadPending = true;
+      }
+      const without = prev.filter((_, i) => i !== idx);
+      return [merged, ...without];
     });
   }, []);
 
+  const uploadAbortByCardIdRef = useRef(new Map<string, AbortController>());
+  const imagesRef = useRef(images);
+  imagesRef.current = images;
+
+  const isClientPendingId = (id: string) => id.startsWith('pending-');
+
+  const revokeIfBlobUrl = (url?: string) => {
+    if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
+  };
+
   const handleProcessFiles = async (files: FileList | File[]) => {
     const fileArray = Array.from(files).filter((f) => f.type.startsWith('image/'));
-    for (const file of fileArray) {
+
+    const processOne = async (file: File) => {
+      const title = file.name.replace(/\.[^/.]+$/, '') || 'Image';
+      const tags =
+        activeTagFiltersRef.current.length > 0
+          ? [...activeTagFiltersRef.current]
+          : ['Upload'];
+      const folderId = selectedFolderIdRef.current;
+      const localUrl = URL.createObjectURL(file);
+      const tempId = `pending-${crypto.randomUUID()}`;
+      const now = Date.now();
+      const abort = new AbortController();
+      uploadAbortByCardIdRef.current.set(tempId, abort);
+
+      const optimistic: ImageItem = {
+        id: tempId,
+        url: localUrl,
+        title,
+        tags,
+        kind: 'image',
+        source: 'uploaded',
+        folderId,
+        createdAt: now,
+        updatedAt: now,
+        aspectRatio: 1,
+        uploadPending: true,
+        mimeType: file.type || 'image/jpeg',
+        filename: file.name,
+      };
+      upsertCard(optimistic);
+
+      let shellId: string | null = null;
+
       try {
+        const { card: shell } = await api.createCard({
+          title,
+          kind: 'image',
+          tags,
+          source: 'uploaded',
+          folderId,
+        });
+        if (abort.signal.aborted) {
+          revokeIfBlobUrl(localUrl);
+          try {
+            await api.deleteCard(shell.id);
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
+
+        shellId = shell.id;
+        uploadAbortByCardIdRef.current.delete(tempId);
+        uploadAbortByCardIdRef.current.set(shellId, abort);
+
+        const local = imagesRef.current.find((c) => c.id === tempId);
+        const bridged: ImageItem = {
+          ...shell,
+          url: localUrl,
+          uploadPending: true,
+          title: local?.title ?? shell.title,
+          tags: local?.tags ?? shell.tags,
+          additionalNotes: local?.additionalNotes ?? shell.additionalNotes,
+          isFavorite: local?.isFavorite ?? shell.isFavorite,
+          mimeType: local?.mimeType ?? shell.mimeType,
+          filename: local?.filename ?? shell.filename,
+        };
+
+        setImages((prev) => {
+          const without = prev.filter((c) => c.id !== tempId && c.id !== shell.id);
+          return [bridged, ...without];
+        });
+        setSelectedImageId((sel) => (sel === tempId ? shell.id : sel));
+
+        // Sync edits made on the temp card before the shell existed
+        if (local) {
+          const patch: {
+            title?: string;
+            tags?: string[];
+            additionalNotes?: string;
+            isFavorite?: boolean;
+          } = {};
+          if (local.title !== title) patch.title = local.title;
+          if (JSON.stringify(local.tags || []) !== JSON.stringify(tags)) {
+            patch.tags = local.tags;
+          }
+          if (local.additionalNotes) patch.additionalNotes = local.additionalNotes;
+          if (local.isFavorite) patch.isFavorite = true;
+          if (Object.keys(patch).length > 0) {
+            void api.updateCard(shell.id, patch).then(({ card }) => {
+              upsertCard({
+                ...card,
+                url: localUrl,
+                uploadPending: true,
+              });
+            });
+          }
+        }
+
         const rawDataUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result as string);
           reader.onerror = reject;
           reader.readAsDataURL(file);
         });
+        if (abort.signal.aborted) return;
 
         const { blob, width, height, ratio } = await new Promise<{
           blob: Blob;
@@ -552,57 +668,85 @@ export default function App() {
           const img = new Image();
           img.onload = () => {
             const maxDim = 1400;
-            let width = img.width;
-            let height = img.height;
-            if (width > maxDim || height > maxDim) {
-              if (width > height) {
-                height = Math.round((height * maxDim) / width);
-                width = maxDim;
+            let w = img.width;
+            let h = img.height;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) {
+                h = Math.round((h * maxDim) / w);
+                w = maxDim;
               } else {
-                width = Math.round((width * maxDim) / height);
-                height = maxDim;
+                w = Math.round((w * maxDim) / h);
+                h = maxDim;
               }
             }
             const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
+            canvas.width = w;
+            canvas.height = h;
             const ctx = canvas.getContext('2d');
             let out = rawDataUrl;
             if (ctx) {
               ctx.fillStyle = '#ffffff';
-              ctx.fillRect(0, 0, width, height);
-              ctx.drawImage(img, 0, 0, width, height);
+              ctx.fillRect(0, 0, w, h);
+              ctx.drawImage(img, 0, 0, w, h);
               out = canvas.toDataURL('image/jpeg', 0.82);
             }
             resolve({
               blob: dataUrlToBlob(out),
-              width,
-              height,
-              ratio: width / height,
+              width: w,
+              height: h,
+              ratio: w / h,
             });
           };
           img.onerror = reject;
           img.src = rawDataUrl;
         });
+        if (abort.signal.aborted) return;
 
-        const { card } = await api.createCard({
-          title: file.name.replace(/\.[^/.]+$/, ''),
-          kind: 'image',
-          tags:
-            activeTagFiltersRef.current.length > 0
-              ? [...activeTagFiltersRef.current]
-              : ['Upload'],
-          source: 'uploaded',
-          folderId: selectedFolderIdRef.current,
+        setImages((prev) =>
+          prev.map((c) =>
+            c.id === shellId
+              ? { ...c, width, height, aspectRatio: ratio, updatedAt: Date.now() }
+              : c
+          )
+        );
+
+        const { card } = await api.uploadCardFile(shellId, blob, {
+          fileName: `${title}.jpg`,
           width,
           height,
           aspectRatio: ratio,
-          file: blob,
-          fileName: file.name.replace(/\.[^/.]+$/, '') + '.jpg',
+          signal: abort.signal,
         });
-        upsertCard(card);
+        if (abort.signal.aborted) return;
+
+        // Preserve any edits made during upload over the upload response
+        const latest = imagesRef.current.find((c) => c.id === shellId);
+        revokeIfBlobUrl(localUrl);
+        upsertCard({
+          ...card,
+          uploadPending: false,
+          title: latest?.title ?? card.title,
+          tags: latest?.tags ?? card.tags,
+          additionalNotes: latest?.additionalNotes ?? card.additionalNotes,
+          isFavorite: latest?.isFavorite ?? card.isFavorite,
+        });
       } catch (err) {
+        if (abort.signal.aborted) return;
         console.error('Upload failed', err);
+        revokeIfBlobUrl(localUrl);
+        setImages((prev) =>
+          prev.filter((c) => c.id !== tempId && c.id !== shellId)
+        );
+        setSelectedImageId((sel) =>
+          sel === tempId || sel === shellId ? null : sel
+        );
+        if (shellId) {
+          try {
+            await api.deleteCard(shellId);
+          } catch {
+            /* ignore */
+          }
+        }
         const raw = err instanceof Error ? err.message : 'Upload failed';
         const needsGoogleReconnect =
           /invalid_grant|google_reauth|Google Drive expir|Connect Google Drive/i.test(raw);
@@ -614,8 +758,13 @@ export default function App() {
         } else {
           setLoadError(raw);
         }
+      } finally {
+        uploadAbortByCardIdRef.current.delete(tempId);
+        if (shellId) uploadAbortByCardIdRef.current.delete(shellId);
       }
-    }
+    };
+
+    await Promise.all(fileArray.map((file) => processOne(file)));
   };
 
   const handleAddFromUrl = async (url: string, title?: string, tags?: string[]) => {
@@ -679,6 +828,7 @@ export default function App() {
             : item
         )
       );
+      if (isClientPendingId(id)) return;
       try {
         const { card } = await api.updateCard(id, data);
         upsertCard(card);
@@ -864,6 +1014,7 @@ export default function App() {
       setImages((prev) =>
         prev.map((img) => (img.id === id ? { ...img, isFavorite: next } : img))
       );
+      if (isClientPendingId(id)) return;
       try {
         const { card } = await api.updateCard(id, { isFavorite: next });
         upsertCard(card);
@@ -877,8 +1028,16 @@ export default function App() {
   const handleDeleteImage = useCallback(
     async (id: string, e: React.MouseEvent) => {
       e.stopPropagation();
+      const abort = uploadAbortByCardIdRef.current.get(id);
+      if (abort) {
+        abort.abort();
+        uploadAbortByCardIdRef.current.delete(id);
+      }
+      const existing = imagesRef.current.find((img) => img.id === id);
+      revokeIfBlobUrl(existing?.url);
       setImages((prev) => prev.filter((img) => img.id !== id));
       if (selectedImageId === id) setSelectedImageId(null);
+      if (isClientPendingId(id)) return;
       try {
         await api.deleteCard(id);
       } catch (err) {
@@ -895,6 +1054,7 @@ export default function App() {
     if (existingTags.includes(newTag)) return;
     const tags = [...existingTags, newTag];
     setImages((prev) => prev.map((img) => (img.id === id ? { ...img, tags } : img)));
+    if (isClientPendingId(id)) return;
     try {
       const { card } = await api.updateCard(id, { tags });
       upsertCard(card);
@@ -908,6 +1068,7 @@ export default function App() {
     if (!current) return;
     const tags = (current.tags || []).filter((t) => t !== tagToRemove);
     setImages((prev) => prev.map((img) => (img.id === id ? { ...img, tags } : img)));
+    if (isClientPendingId(id)) return;
     try {
       const { card } = await api.updateCard(id, { tags });
       upsertCard(card);
@@ -927,7 +1088,7 @@ export default function App() {
   const showSelectionDock = isCardDragging || selectionDockIds.length > 0;
 
   const filteredImages = useMemo(() => {
-    return images.filter((img) => {
+    const filtered = images.filter((img) => {
       if (isFavoriteFilterActive && !img.isFavorite) return false;
       if (selectedFolderId && img.folderId !== selectedFolderId) return false;
       if (activeTagFilters.length > 0) {
@@ -957,6 +1118,9 @@ export default function App() {
       }
       return true;
     });
+    return filtered.sort(
+      (a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt)
+    );
   }, [images, isFavoriteFilterActive, selectedFolderId, searchQuery, activeTagFilters]);
 
   const selectedItem = useMemo(

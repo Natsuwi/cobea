@@ -9,6 +9,7 @@ import { RefreshableThumb } from './RefreshableThumb';
 import { CardThumbPlaceholder } from './CardThumbPlaceholder';
 import { WebLinkCardPreview } from './WebLinkCardPreview';
 import { CardKindBadge } from './CardKindBadge';
+import { CobeaLogoMark } from './CobeaBrand';
 import { externalUrlForCard, isWebPageKind } from '../lib/cardKinds';
 
 export { ITEM_DRAG_MIME };
@@ -128,7 +129,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
                 />
               )}
 
-              {mediaVisible && !hasError ? (
+              {(mediaVisible || image.uploadPending) && !hasError ? (
                 <RefreshableThumb
                   item={image}
                   onLoad={() => setIsLoaded(true)}
@@ -145,6 +146,15 @@ export const ImageCard: React.FC<ImageCardProps> = ({
                   <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/55 text-white shadow-lg backdrop-blur-sm ring-1 ring-white/20">
                     <Play className="h-5 w-5 fill-current ml-0.5" />
                   </span>
+                </div>
+              ) : null}
+
+              {image.uploadPending ? (
+                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/20">
+                  <CobeaLogoMark
+                    className="w-10 h-10 text-white/80 animate-pulse drop-shadow-md"
+                    title="Upload en cours"
+                  />
                 </div>
               ) : null}
 
