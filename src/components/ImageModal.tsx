@@ -7,7 +7,6 @@ import {
   Copy,
   Download,
   Check,
-  Tag as TagIcon,
   Play,
   StickyNote,
 } from 'lucide-react';
@@ -15,6 +14,7 @@ import { ImageItem } from '../types';
 import { DetailDrawingLayer } from './drawing/DetailDrawingLayer';
 import { FileCardPreview, isDisplayableImageItem, isVideoItem } from './FileCardPreview';
 import { WebLinkCardPreview } from './WebLinkCardPreview';
+import { CardTagsEditor } from './CardTagsEditor';
 import { externalUrlForCard, isWebPageKind } from '../lib/cardKinds';
 import { useIsMobileViewport } from '../hooks/useIsMobileViewport';
 import { api } from '../lib/api';
@@ -30,6 +30,7 @@ interface ImageModalProps {
   onUpdateDrawing: (id: string, data: string | null) => void;
   onUpdateAdditionalNotes: (id: string, additionalNotes: string) => void;
   onCardUpdated?: (card: ImageItem) => void;
+  suggestedTags?: string[];
 }
 
 export const ImageModal: React.FC<ImageModalProps> = ({
@@ -42,19 +43,16 @@ export const ImageModal: React.FC<ImageModalProps> = ({
   onUpdateDrawing,
   onUpdateAdditionalNotes,
   onCardUpdated,
+  suggestedTags = [],
 }) => {
   const isMobile = useIsMobileViewport();
   const [copied, setCopied] = useState(false);
-  const [newTagInput, setNewTagInput] = useState('');
-  const [showAddTag, setShowAddTag] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [additionalNotes, setAdditionalNotes] = useState('');
 
   useEffect(() => {
     if (image) {
       setAdditionalNotes(image.additionalNotes || '');
-      setShowAddTag(false);
-      setNewTagInput('');
     }
   }, [image?.id]);
 
@@ -142,28 +140,19 @@ export const ImageModal: React.FC<ImageModalProps> = ({
     }
   };
 
-  const handleAddTagSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newTagInput.trim()) {
-      onAddTag(image.id, newTagInput.trim());
-      setNewTagInput('');
-      setShowAddTag(false);
-    }
-  };
-
   const mediaPreview = (
     <div className="absolute inset-0 flex items-center justify-center p-4 md:p-8">
       {showAsWebLink && externalUrl ? (
         <button
           type="button"
           onClick={() => window.open(externalUrl, '_blank', 'noopener,noreferrer')}
-          className="w-full max-w-md h-full max-h-full aspect-[0.85] rounded-2xl overflow-hidden shadow-2xl border border-white/10 cursor-pointer hover:scale-[1.01] active:scale-[0.99] transition-transform pointer-events-auto"
+          className="w-full h-full max-w-lg rounded-2xl overflow-hidden shadow-2xl border border-white/10 cursor-pointer hover:scale-[1.01] active:scale-[0.99] transition-transform pointer-events-auto"
           title="Ouvrir le site"
         >
           <WebLinkCardPreview title={image.title} url={externalUrl} size="lg" />
         </button>
       ) : showAsFile ? (
-        <div className="w-full max-w-md h-full max-h-full aspect-[0.85] rounded-2xl overflow-hidden shadow-2xl pointer-events-none border border-white/10">
+        <div className="w-full h-full max-w-lg rounded-2xl overflow-hidden shadow-2xl pointer-events-none border border-white/10">
           <FileCardPreview
             title={image.title}
             mimeType={image.mimeType}
@@ -209,60 +198,12 @@ export const ImageModal: React.FC<ImageModalProps> = ({
           </p>
         </div>
 
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs font-medium text-zinc-500 dark:text-zinc-400">
-            <span className="flex items-center gap-1">
-              <TagIcon className="w-3.5 h-3.5" /> Étiquettes
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowAddTag(!showAddTag)}
-              className="text-xs text-zinc-900 dark:text-zinc-100 font-medium hover:underline"
-            >
-              + Ajouter
-            </button>
-          </div>
-
-          <div className="flex flex-wrap gap-1.5">
-            {image.tags && image.tags.length > 0 ? (
-              image.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-zinc-200/70 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
-                >
-                  #{tag}
-                  <button
-                    type="button"
-                    onClick={() => onRemoveTag(image.id, tag)}
-                    className="hover:text-rose-500 ml-0.5"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </span>
-              ))
-            ) : (
-              <span className="text-xs text-zinc-400 italic">Aucune étiquette</span>
-            )}
-          </div>
-
-          {showAddTag && (
-            <form onSubmit={handleAddTagSubmit} className="mt-2 flex gap-1.5">
-              <input
-                type="text"
-                placeholder="Nouvelle étiquette..."
-                value={newTagInput}
-                onChange={(e) => setNewTagInput(e.target.value)}
-                className="flex-1 px-3 py-1 text-xs rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-              />
-              <button
-                type="submit"
-                className="px-3 py-1 text-xs font-medium rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
-              >
-                Ajouter
-              </button>
-            </form>
-          )}
-        </div>
+        <CardTagsEditor
+          tags={image.tags || []}
+          suggestedTags={suggestedTags}
+          onAdd={(tag) => onAddTag(image.id, tag)}
+          onRemove={(tag) => onRemoveTag(image.id, tag)}
+        />
 
         <div className="space-y-2">
           <label className="flex items-center gap-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">

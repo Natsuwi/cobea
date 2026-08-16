@@ -33,6 +33,8 @@ export type StorageState = {
 export type MeResponse = {
   user: AuthUser;
   profile: UserProfile & { theme?: ThemeMode };
+  /** True when stored Drive tokens were rejected (invalid_grant) and cleared. */
+  googleNeedsReconnect?: boolean;
 } & StorageState;
 
 export function getToken(): string | null {

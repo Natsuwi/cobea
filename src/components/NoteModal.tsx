@@ -4,7 +4,6 @@ import {
   X,
   Heart,
   Trash2,
-  Tag as TagIcon,
   Check,
   Maximize2,
   Minimize2,
@@ -13,6 +12,7 @@ import {
 import { ImageItem } from '../types';
 import { NoteEditor } from './NoteEditor';
 import { DetailDrawingLayer } from './drawing/DetailDrawingLayer';
+import { CardTagsEditor } from './CardTagsEditor';
 import { useIsMobileViewport } from '../hooks/useIsMobileViewport';
 
 interface NoteModalProps {
@@ -27,6 +27,7 @@ interface NoteModalProps {
     data: { title?: string; markdown?: string; additionalNotes?: string }
   ) => void;
   onUpdateDrawing: (id: string, data: string | null) => void;
+  suggestedTags?: string[];
 }
 
 export const NoteModal: React.FC<NoteModalProps> = ({
@@ -38,13 +39,12 @@ export const NoteModal: React.FC<NoteModalProps> = ({
   onRemoveTag,
   onUpdateNote,
   onUpdateDrawing,
+  suggestedTags = [],
 }) => {
   const isMobile = useIsMobileViewport();
   const [title, setTitle] = useState('');
   const [markdown, setMarkdown] = useState('');
   const [additionalNotes, setAdditionalNotes] = useState('');
-  const [newTagInput, setNewTagInput] = useState('');
-  const [showAddTag, setShowAddTag] = useState(false);
   const [saved, setSaved] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -122,15 +122,6 @@ export const NoteModal: React.FC<NoteModalProps> = ({
 
   if (!note) return null;
 
-  const handleAddTagSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newTagInput.trim()) {
-      onAddTag(note.id, newTagInput.trim());
-      setNewTagInput('');
-      setShowAddTag(false);
-    }
-  };
-
   const handleClose = () => {
     setIsFullscreen(false);
     onClose();
@@ -165,60 +156,12 @@ export const NoteModal: React.FC<NoteModalProps> = ({
           </p>
         </div>
 
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs font-medium text-zinc-500 dark:text-zinc-400">
-            <span className="flex items-center gap-1">
-              <TagIcon className="w-3.5 h-3.5" /> Étiquettes
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowAddTag(!showAddTag)}
-              className="text-xs text-zinc-900 dark:text-zinc-100 font-medium hover:underline"
-            >
-              + Ajouter
-            </button>
-          </div>
-
-          <div className="flex flex-wrap gap-1.5">
-            {note.tags && note.tags.length > 0 ? (
-              note.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-zinc-200/70 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
-                >
-                  #{tag}
-                  <button
-                    type="button"
-                    onClick={() => onRemoveTag(note.id, tag)}
-                    className="hover:text-rose-500 ml-0.5"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </span>
-              ))
-            ) : (
-              <span className="text-xs text-zinc-400 italic">Aucune étiquette</span>
-            )}
-          </div>
-
-          {showAddTag && (
-            <form onSubmit={handleAddTagSubmit} className="mt-2 flex gap-1.5">
-              <input
-                type="text"
-                placeholder="Nouvelle étiquette..."
-                value={newTagInput}
-                onChange={(e) => setNewTagInput(e.target.value)}
-                className="flex-1 px-3 py-1 text-xs rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-              />
-              <button
-                type="submit"
-                className="px-3 py-1 text-xs font-medium rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
-              >
-                Ajouter
-              </button>
-            </form>
-          )}
-        </div>
+        <CardTagsEditor
+          tags={note.tags || []}
+          suggestedTags={suggestedTags}
+          onAdd={(tag) => onAddTag(note.id, tag)}
+          onRemove={(tag) => onRemoveTag(note.id, tag)}
+        />
 
         <div className="space-y-2">
           <label className="flex items-center gap-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
@@ -368,17 +311,18 @@ export const NoteModal: React.FC<NoteModalProps> = ({
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+              {/* Explicit height — absolute drawing layer needs a real box, not min-height alone */}
               <div
-                className="relative min-h-[min(52vh,380px)] bg-zinc-50 dark:bg-zinc-950/40"
-                style={{ minHeight: 'min(52vh, 380px)' }}
+                className="relative w-full shrink-0 bg-zinc-50 dark:bg-zinc-950/40"
+                style={{ height: 'min(52vh, 380px)' }}
               >
                 <DetailDrawingLayer
                   itemId={note.id}
                   drawingData={note.drawingData}
                   onDrawingChange={onUpdateDrawing}
-                  className="absolute inset-0 w-full h-full flex flex-col overflow-hidden"
+                  className="absolute inset-0 w-full h-full overflow-hidden"
                 >
-                  <div className="flex-1 min-h-0 overflow-y-auto p-4">
+                  <div className="absolute inset-0 overflow-y-auto overscroll-contain p-4">
                     <NoteEditor
                       value={markdown}
                       onChange={setMarkdown}
@@ -415,9 +359,9 @@ export const NoteModal: React.FC<NoteModalProps> = ({
             itemId={note.id}
             drawingData={note.drawingData}
             onDrawingChange={onUpdateDrawing}
-            className="flex-1 flex flex-col min-h-[40vh] md:min-h-0 overflow-hidden bg-zinc-50 dark:bg-zinc-950/40"
+            className="flex-1 relative min-h-[40vh] md:min-h-0 overflow-hidden bg-zinc-50 dark:bg-zinc-950/40"
           >
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8">
+            <div className="absolute inset-0 overflow-y-auto p-4 md:p-8">
               <NoteEditor
                 value={markdown}
                 onChange={setMarkdown}

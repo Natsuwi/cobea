@@ -167,6 +167,8 @@ export default function App() {
 
   const selectedFolderIdRef = useRef(selectedFolderId);
   selectedFolderIdRef.current = selectedFolderId;
+  const activeTagFiltersRef = useRef(activeTagFilters);
+  activeTagFiltersRef.current = activeTagFilters;
 
   const refreshGallery = useCallback(async () => {
     const [cardsRes, foldersRes] = await Promise.all([api.listCards(), api.listFolders()]);
@@ -240,6 +242,11 @@ export default function App() {
     setActiveUserId(me.user.id);
     setProfile(me.profile);
     applyMeStorage(me, storageSetters);
+    if (me.googleNeedsReconnect) {
+      setLoadError(
+        'Connexion Google Drive expirée — ouvre les paramètres et reconnecte ton compte.'
+      );
+    }
     if (me.profile.theme === 'light' || me.profile.theme === 'dark') {
       setTheme(me.profile.theme);
     }
@@ -287,6 +294,7 @@ export default function App() {
     if (google) {
       window.history.replaceState({}, '', window.location.pathname);
       if (google === 'connected') {
+        setLoadError(null);
         setIsAccountOpen(true);
       }
     }
@@ -471,6 +479,23 @@ export default function App() {
     return Array.from(tagsSet);
   }, [images]);
 
+  /** Most recently seen tags across cards (for detail modal suggestions). */
+  const recentTags = useMemo(() => {
+    const ordered: string[] = [];
+    const seen = new Set<string>();
+    const sorted = [...images].sort((a, b) => b.createdAt - a.createdAt);
+    for (const img of sorted) {
+      for (const t of img.tags || []) {
+        const key = t.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        ordered.push(t);
+        if (ordered.length >= 16) return ordered;
+      }
+    }
+    return ordered;
+  }, [images]);
+
   const commitTagFilter = useCallback(
     (rawTag: string) => {
       const trimmed = rawTag.replace(/^#/, '').trim();
@@ -563,7 +588,10 @@ export default function App() {
         const { card } = await api.createCard({
           title: file.name.replace(/\.[^/.]+$/, ''),
           kind: 'image',
-          tags: ['Upload'],
+          tags:
+            activeTagFiltersRef.current.length > 0
+              ? [...activeTagFiltersRef.current]
+              : ['Upload'],
           source: 'uploaded',
           folderId: selectedFolderIdRef.current,
           width,
@@ -1244,6 +1272,7 @@ export default function App() {
           void handleUpdateNote(id, { additionalNotes })
         }
         onCardUpdated={upsertCard}
+        suggestedTags={recentTags}
       />
 
       <NoteModal
@@ -1255,6 +1284,7 @@ export default function App() {
         onRemoveTag={handleRemoveTag}
         onUpdateNote={handleUpdateNote}
         onUpdateDrawing={handleUpdateDrawing}
+        suggestedTags={recentTags}
       />
 
       <MoodboardModal

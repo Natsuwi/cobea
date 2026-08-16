@@ -201,6 +201,39 @@ export async function getAuthedDrive(userId: string) {
   return instrumentDrive(google.drive({ version: 'v3', auth: client }));
 }
 
+/**
+ * Checks whether stored Google tokens still work.
+ * On invalid_grant, clears tokens (via getAuthedDrive) and returns needsReconnect.
+ */
+export async function probeGoogleConnection(userId: string): Promise<{
+  connected: boolean;
+  needsReconnect: boolean;
+}> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { googleRefreshToken: true },
+  });
+  if (!user?.googleRefreshToken) {
+    return { connected: false, needsReconnect: false };
+  }
+  try {
+    await getAuthedDrive(userId);
+    return { connected: true, needsReconnect: false };
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    const msg = err instanceof Error ? err.message : String(err);
+    if (
+      code === 'google_reauth_required' ||
+      isGoogleInvalidGrant(err) ||
+      /Google Drive expir|reconnecte/i.test(msg)
+    ) {
+      return { connected: false, needsReconnect: true };
+    }
+    // Transient network / API errors: keep UI as connected
+    return { connected: true, needsReconnect: false };
+  }
+}
+
 function instrumentDrive(drive: drive_v3.Drive): drive_v3.Drive {
   const files = drive.files;
 

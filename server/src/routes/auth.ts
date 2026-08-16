@@ -15,6 +15,7 @@ import {
   isGoogleConfiguredForUser,
   listDriveFolders,
   parseSyncFolders,
+  probeGoogleConnection,
   saveGoogleTokens,
   syncDriveFoldersForUser,
   type DriveFolderRef,
@@ -163,10 +164,25 @@ authRouter.get('/me', requireAuth, async (req: AuthRequest, res) => {
     res.status(404).json({ error: 'Not found' });
     return;
   }
+
+  const probe = await probeGoogleConnection(user.id);
+  const fresh =
+    probe.needsReconnect
+      ? await prisma.user.findUnique({
+          where: { id: user.id },
+          include: { profile: true },
+        })
+      : user;
+  if (!fresh?.profile) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
+
   res.json({
-    user: { id: user.id, email: user.email },
-    profile: serializeProfile(user.profile),
-    ...storagePayload(user),
+    user: { id: fresh.id, email: fresh.email },
+    profile: serializeProfile(fresh.profile),
+    ...storagePayload(fresh),
+    googleNeedsReconnect: probe.needsReconnect,
   });
 });
 

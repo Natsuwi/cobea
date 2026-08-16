@@ -229,17 +229,17 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   const shellClass = isFullscreen
     ? 'note-editor-shell note-editor-shell--fullscreen flex-1 cursor-text min-h-0 overflow-y-auto'
     : isEmbedded
-      ? 'note-editor-shell note-editor-shell--embedded flex-1 cursor-text min-h-0 h-full'
+      ? 'note-editor-shell note-editor-shell--embedded cursor-text min-h-0'
       : 'note-editor-shell rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 px-4 py-3 focus-within:ring-2 focus-within:ring-zinc-400/50 transition-shadow cursor-text';
 
   return (
     <div
-      className={`relative ${isFullscreen || isEmbedded ? 'flex-1 flex flex-col min-h-0 h-full' : ''}`}
+      className={`relative ${isFullscreen || isEmbedded ? 'flex flex-col min-h-0' : ''}`}
     >
       <div
         className={shellClass}
         style={
-          isFullscreen || isEmbedded
+          isFullscreen
             ? undefined
             : { minHeight: `${Math.max(minRows, 4) * 1.55}rem` }
         }
