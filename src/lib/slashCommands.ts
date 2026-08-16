@@ -87,6 +87,20 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     run: (editor) => editor.chain().focus().toggleOrderedList().run(),
   },
   {
+    id: 'todo',
+    label: 'Case à cocher',
+    description: 'Tâche à cocher / liste de todos',
+    keywords: ['coche', 'checkbox', 'todo', 'tâche', 'task', 'check'],
+    run: (editor) => {
+      const ok = editor.chain().focus().toggleTaskList().run();
+      if (!ok) {
+        // Fallback: insert a GFM task line then re-parse isn't needed —
+        // force wrap current block as task item
+        editor.commands.toggleTaskList();
+      }
+    },
+  },
+  {
     id: 'link',
     label: 'Lien',
     description: 'Lien hypertexte',

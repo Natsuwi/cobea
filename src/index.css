@@ -313,12 +313,40 @@ html {
   border: none;
   outline: none;
   box-shadow: none;
+  padding: 0.25rem 0.15rem 1.5rem;
 }
 
 .note-editor-shell--embedded .tiptap,
-.note-editor-shell--embedded .ProseMirror {
+.note-editor-shell--embedded .ProseMirror,
+.note-editor-shell--embedded .note-editor-content {
   min-height: 100%;
   outline: none;
+  font-size: 1.0625rem;
+  line-height: 1.75;
+  letter-spacing: -0.01em;
+}
+
+.note-editor-shell--embedded .markdown-preview h1,
+.note-editor-shell--embedded .note-editor-content h1 {
+  font-size: 1.65rem;
+  margin: 0.9em 0 0.4em;
+}
+
+.note-editor-shell--embedded .markdown-preview h2,
+.note-editor-shell--embedded .note-editor-content h2 {
+  font-size: 1.35rem;
+  margin: 0.85em 0 0.35em;
+}
+
+.note-editor-shell--embedded .markdown-preview h3,
+.note-editor-shell--embedded .note-editor-content h3 {
+  font-size: 1.15rem;
+  margin: 0.75em 0 0.3em;
+}
+
+.note-editor-shell--embedded .markdown-preview p,
+.note-editor-shell--embedded .note-editor-content p {
+  margin: 0.55em 0;
 }
 
 .note-editor-shell .ProseMirror p.is-editor-empty:first-child::before,
@@ -346,6 +374,357 @@ html {
 
 .note-editor-content > *:last-child {
   margin-bottom: 0;
+}
+
+/* —— Task / checkbox list (slash « Case à cocher ») —— */
+ul.note-task-list,
+ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0;
+  margin: 0.55em 0;
+}
+
+/* Outer <li> from ReactNodeViewRenderer */
+li.note-task-host,
+li.react-renderer.node-taskItem {
+  display: block;
+  list-style: none;
+  margin: 0.4em 0;
+  padding: 0;
+}
+
+/* Inner flex row: checkbox + text, vertically centered */
+.note-task-item[data-node-view-wrapper],
+div.note-task-item {
+  display: flex !important;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  position: relative;
+  line-height: inherit;
+}
+
+.note-task-checkbox {
+  position: relative;
+  flex-shrink: 0;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+  cursor: pointer;
+  user-select: none;
+  align-self: center;
+}
+
+.note-task-checkbox input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.note-task-checkbox-face {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.note-task-checkbox-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  color: #a1a1aa;
+  position: relative;
+  z-index: 1;
+}
+
+.dark .note-task-checkbox-svg {
+  color: #71717a;
+}
+
+.note-task-checkbox-ring {
+  fill: transparent;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
+  transition: stroke 0.2s ease;
+}
+
+.note-task-checkbox-tick {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  opacity: 0;
+}
+
+/* Idle unchecked hover */
+.note-task-checkbox:hover .note-task-checkbox-svg {
+  color: var(--accent, #a16207);
+}
+
+/* Checking: draw the rounded square perimeter, then fill + tick */
+.note-task-item--checked .note-task-checkbox-svg,
+.note-task-item--animating.note-task-item--checked .note-task-checkbox-svg {
+  color: var(--accent, #a16207);
+}
+
+.note-task-item--animating.note-task-item--checked .note-task-checkbox-ring {
+  animation: note-task-ring-draw 0.48s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.note-task-item--checked:not(.note-task-item--animating) .note-task-checkbox-ring {
+  stroke: var(--accent, #a16207);
+  fill: var(--accent, #a16207);
+  stroke-dashoffset: 0;
+}
+
+.note-task-item--animating.note-task-item--checked .note-task-checkbox-ring {
+  fill: transparent;
+}
+
+.note-task-item--animating.note-task-item--checked .note-task-checkbox-face::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 3.5px;
+  background: var(--accent, #a16207);
+  opacity: 0;
+  z-index: 0;
+  animation: note-task-fill-in 0.22s ease 0.42s forwards;
+}
+
+.note-task-item--checked:not(.note-task-item--animating) .note-task-checkbox-face::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 3.5px;
+  background: var(--accent, #a16207);
+  opacity: 1;
+  z-index: 0;
+}
+
+.note-task-item--animating.note-task-item--checked .note-task-checkbox-tick {
+  animation: note-task-tick-draw 0.28s ease 0.5s forwards;
+}
+
+.note-task-item--checked:not(.note-task-item--animating) .note-task-checkbox-tick {
+  stroke-dashoffset: 0;
+  opacity: 1;
+}
+
+@keyframes note-task-ring-draw {
+  0% {
+    stroke-dashoffset: 100;
+    fill: transparent;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    fill: transparent;
+  }
+}
+
+@keyframes note-task-fill-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes note-task-tick-draw {
+  from {
+    stroke-dashoffset: 100;
+    opacity: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+/* Progressive strikethrough — width of text only (fit-content), not full row */
+.note-task-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  position: relative;
+  line-height: inherit;
+}
+
+.note-task-content > p,
+.note-task-content p {
+  margin: 0 !important;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  transition: color 0.35s ease 0.3s;
+}
+
+.note-task-item--struck .note-task-content > p,
+.note-task-item--struck .note-task-content p {
+  color: #a1a1aa !important;
+  background-image: linear-gradient(currentColor, currentColor);
+  background-position: left center;
+  background-repeat: no-repeat;
+  background-size: 0% 1.35px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  animation: note-task-strike 0.48s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.dark .note-task-item--struck .note-task-content > p,
+.dark .note-task-item--struck .note-task-content p {
+  color: #71717a !important;
+}
+
+.note-task-item--checked:not(.note-task-item--animating).note-task-item--struck
+  .note-task-content
+  p {
+  background-size: 100% 1.35px;
+  animation: none;
+}
+
+@keyframes note-task-strike {
+  from {
+    background-size: 0% 1.35px;
+  }
+  to {
+    background-size: 100% 1.35px;
+  }
+}
+
+/* —— Gallery note preview: same checkbox look (static, read-only) —— */
+.markdown-preview ul.note-task-list--preview,
+.markdown-preview ul.contains-task-list {
+  list-style: none;
+  padding-left: 0;
+  margin: 0.4em 0;
+}
+
+.markdown-preview li.note-task-host--preview {
+  display: block;
+  list-style: none;
+  margin: 0.3em 0;
+  padding: 0;
+}
+
+.markdown-preview .note-task-item--preview {
+  display: flex !important;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+}
+
+.markdown-preview .note-task-checkbox--preview {
+  pointer-events: none;
+}
+
+.markdown-preview .note-task-native-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.markdown-preview .note-task-content--preview {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.markdown-preview .note-task-content--preview > p,
+.markdown-preview .note-task-content--preview p {
+  margin: 0 !important;
+  display: inline;
+}
+
+.markdown-preview .note-task-text {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.markdown-preview .note-task-item--preview.note-task-item--checked .note-task-text,
+.markdown-preview .note-task-item--preview.note-task-item--struck .note-task-text {
+  color: #a1a1aa;
+}
+
+.dark .markdown-preview .note-task-item--preview.note-task-item--checked .note-task-text,
+.dark .markdown-preview .note-task-item--preview.note-task-item--struck .note-task-text {
+  color: #71717a;
+}
+
+.markdown-preview .note-task-item--preview.note-task-item--struck .note-task-text {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-position: left center;
+  background-repeat: no-repeat;
+  background-size: 100% 1.2px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* Fallback if react-markdown still emits bare task-list-item + native input */
+.markdown-preview li.task-list-item:not(.note-task-host--preview) {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  list-style: none;
+}
+
+.markdown-preview li.task-list-item:not(.note-task-host--preview) > input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+  flex-shrink: 0;
+  border: 1.6px solid #a1a1aa;
+  border-radius: 0.35rem;
+  background: transparent;
+  position: relative;
+}
+
+.dark .markdown-preview li.task-list-item:not(.note-task-host--preview) > input[type='checkbox'] {
+  border-color: #71717a;
+}
+
+.markdown-preview
+  li.task-list-item:not(.note-task-host--preview)
+  > input[type='checkbox']:checked {
+  border-color: var(--accent, #a16207);
+  background: var(--accent, #a16207);
+}
+
+.markdown-preview
+  li.task-list-item:not(.note-task-host--preview)
+  > input[type='checkbox']:checked::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 1px;
+  width: 5px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
 }
 
 /* Drawing toolbox — tools peek from below; tip always framed (brush is ~9:1 tall) */

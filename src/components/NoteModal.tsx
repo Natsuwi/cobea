@@ -8,6 +8,7 @@ import {
   Maximize2,
   Minimize2,
   StickyNote,
+  ChevronUp,
 } from 'lucide-react';
 import { ImageItem } from '../types';
 import { NoteEditor } from './NoteEditor';
@@ -47,6 +48,8 @@ export const NoteModal: React.FC<NoteModalProps> = ({
   const [additionalNotes, setAdditionalNotes] = useState('');
   const [saved, setSaved] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  /** Mobile: complementary info panel collapsed by default */
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const skipSaveRef = useRef(true);
 
   useEffect(() => {
@@ -56,6 +59,7 @@ export const NoteModal: React.FC<NoteModalProps> = ({
       setAdditionalNotes(note.additionalNotes || '');
       setSaved(false);
       setIsFullscreen(false);
+      setDetailsOpen(false);
       skipSaveRef.current = true;
     }
   }, [note?.id]);
@@ -315,11 +319,14 @@ export const NoteModal: React.FC<NoteModalProps> = ({
               </button>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
-              {/* Explicit height — absolute drawing layer needs a real box, not min-height alone */}
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               <div
-                className="relative w-full shrink-0 bg-zinc-50 dark:bg-zinc-950/40"
-                style={{ height: 'min(52vh, 380px)' }}
+                className="relative w-full flex-1 min-h-0 bg-zinc-50 dark:bg-zinc-950/40"
+                style={
+                  detailsOpen
+                    ? { height: 'min(42vh, 300px)', flex: 'none' }
+                    : undefined
+                }
               >
                 <DetailDrawingLayer
                   itemId={note.id}
@@ -327,11 +334,11 @@ export const NoteModal: React.FC<NoteModalProps> = ({
                   onDrawingChange={onUpdateDrawing}
                   className="absolute inset-0 w-full h-full overflow-hidden"
                 >
-                  <div className="absolute inset-0 overflow-y-auto overscroll-contain p-4">
+                  <div className="absolute inset-0 overflow-y-auto overscroll-contain px-6 pt-7 pb-6">
                     <NoteEditor
                       value={markdown}
                       onChange={setMarkdown}
-                      autoFocus
+                      autoFocus={false}
                       minRows={10}
                       variant="embedded"
                     />
@@ -339,7 +346,38 @@ export const NoteModal: React.FC<NoteModalProps> = ({
                 </DetailDrawingLayer>
               </div>
 
-              <div className="p-5 bg-zinc-50 dark:bg-zinc-900/95">{sidebar}</div>
+              <div className="shrink-0 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/95">
+                <button
+                  type="button"
+                  onClick={() => setDetailsOpen((v) => !v)}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-100/80 dark:hover:bg-zinc-800/50 transition-colors"
+                  aria-expanded={detailsOpen}
+                >
+                  <span>{detailsOpen ? 'Masquer les infos' : 'Afficher les infos'}</span>
+                  <ChevronUp
+                    className={`w-4 h-4 transition-transform duration-300 ${
+                      detailsOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+
+                <AnimatePresence initial={false}>
+                  {detailsOpen ? (
+                    <motion.div
+                      key="note-details"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                      className="overflow-hidden"
+                    >
+                      <div className="max-h-[42dvh] overflow-y-auto overscroll-contain px-5 pb-5">
+                        {sidebar}
+                      </div>
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
+              </div>
             </div>
           </motion.div>
         </div>
@@ -366,7 +404,7 @@ export const NoteModal: React.FC<NoteModalProps> = ({
             onDrawingChange={onUpdateDrawing}
             className="flex-1 relative min-h-[40vh] md:min-h-0 overflow-hidden bg-zinc-50 dark:bg-zinc-950/40"
           >
-            <div className="absolute inset-0 overflow-y-auto p-4 md:p-8">
+            <div className="absolute inset-0 overflow-y-auto px-7 pt-8 pb-8 md:px-12 md:pt-10 md:pb-10">
               <NoteEditor
                 value={markdown}
                 onChange={setMarkdown}
